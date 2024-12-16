@@ -29,7 +29,9 @@ app_state = {
     "currentAnswers": [],
     "storedAnswers": {},  # {questionIndex: [list_of_answers]}
     "questions": ["Willkommen, wie lautet der Name eurer Gruppe?"],
-    "gamePhase": "collecting"  # new state: either "collecting" or "answering"
+    "gamePhase": "collecting"  # new state: either "collecting" or "answering",
+    "gptModel": "gpt-3.5-turbo",
+    "systemPrompt": "You are a direct german assistant. You answer in german. Spare words, as if in a tv quiz show, no unnecessary phrases or introductions. Do not restate parts of the question in the answer. Do not quote your answer. If you are asked about personal questions like name, age, gender, make up an austrian teenager, aged 14, male, called Nikolaus living in vienna visiting a workshop in the Lila Raum in the Technisches Museum Wien."
 }
 
 @app.route('/')
@@ -154,8 +156,8 @@ def get_ai_answer():
     # Call the OpenAI API to get an answer (example using gpt-3.5-turbo)
     try:
         completion = openAIClient.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a direct assistant. Spare words, as if in a tv quiz show, no unnecessary phrases or introductions. Do not restate parts of the question in the answer. Do not quote your answer. If you are asked about personal questions like name, age, gender, make up an austrian teenager living in vienna visiting a workshop in the Lila Raum in the Technisches Museum Wien."},
+            model=app_state["gptModel"],
+            messages=[{"role": "system", "content": app_state["systemPrompt"]},
                       {"role": "user", "content": question}],
             max_tokens=150,
             temperature=0.7
