@@ -1,0 +1,22 @@
+version: '3'
+
+services:
+
+  sharedki_flask_app:
+    build:
+      context: .
+    container_name: sharedki_flask_container
+    networks:
+      - revproxy
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}  # Load OPENAI_API_KEY from .env file
+      - FLASK_SECRET=${FLASK_SECRET}  # Load FLASK_SECRET from .env file
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=revproxy"
+      - "traefik.http.routers.sharedKi.rule=Host(`sharedki.abendstille.at`)"
+      - "traefik.http.routers.sharedKi.tls.certresolver=myhttpchallenge"
+
+networks:
+  revproxy:
+    external: true

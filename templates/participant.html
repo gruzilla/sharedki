@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Participant Screen</title>
+    <!-- Use the same Socket.IO version and CSS -->
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js" integrity="sha384-KA7m0DwgQGmeRC6Xre3hJO+ZxpanOauVh4Czdqbg8lDKJ3bZZYVYmP+y4F31x40L" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+<header class="game-header">
+    <h1 class="game-title">CyberQuest Participant</h1>
+</header>
+
+<main class="game-container">
+    <!-- Info Panel: shows instructions, current question, etc. -->
+    <section class="panel info-panel" id="info_panel">
+        <h2 id="info_heading">Loading...</h2>
+        <div id="info_content"></div>
+    </section>
+
+    <!-- Interaction Panel: where participant provides input -->
+    <section class="panel interaction-panel" id="interaction_panel">
+        <h2 id="interaction_heading">Actions</h2>
+        <div id="interaction_content"></div>
+    </section>
+</main>
+
+<footer class="game-footer">
+    <p>© 2084 CyberCorp. All rights reserved.</p>
+</footer>
+
+<script>
+    var socket;
+    var app_state = {};
+    var participantPhase = localStorage.getItem("participantPhase") || "welcome";
+    var submittedQ = localStorage.getItem("submittedQuestion") || "";
+
+    function renderView() {
+        const infoHeading = document.getElementById("info_heading");
+        const infoContent = document.getElementById("info_content");
+        const interactionHeading = document.getElementById("interaction_heading");
+        const interactionContent = document.getElementById("interaction_content");
+
+        // Clear contents
+        infoContent.innerHTML = "";
+        interactionContent.innerHTML = "";
+
+        // Determine view based on gamePhase and participantPhase
+        if (app_state.gamePhase === "collecting") {
+            if (participantPhase === "welcome") {
+                // Show welcome
+                infoHeading.textContent = "Welcome";
+                let p = document.createElement('p');
+                p.textContent = "Willkommen! Bereit loszulegen?";
+                infoContent.appendChild(p);
+
+                interactionHeading.textContent = "Start";
+                let continueBtn = document.createElement('button');
+                continueBtn.classList.add("futuristic-btn");
+                continueBtn.textContent = "Los gehts!";
+                continueBtn.addEventListener("click", () => {
+                    participantPhase = "insert";
+                    localStorage.setItem("participantPhase", participantPhase);
+                    renderView();
+                });
+                interactionContent.appendChild(continueBtn);
+
+            } else {
+                // participantPhase is either 'insert', 'update', or something similar
+                if (!submittedQ) {
+                    // Insert question view
+                    infoHeading.textContent = "Gebt eure Frage ein:";
+                    let p = document.createElement('p');
+                    p.textContent = "Bitte schlagt eine Frage vor. Die Frage wird von den Gruppen und einer KI beantwortet. Versucht die Frage so zu formulieren, dass ihr anhand der Antwort unterscheiden könnt, ob eine KI die Frage beantwortet hat.";
+                    infoContent.appendChild(p);
+
+                    interactionHeading.textContent = "Your Question";
+                    let inputField = document.createElement('input');
+                    inputField.type = "text";
+                    inputField.classList.add("input-field");
+                    inputField.placeholder = "Eure Frage hier...";
+                    inputField.id = "question_input";
+                    interactionContent.appendChild(inputField);
+
+                    let submitBtn = document.createElement('button');
+                    submitBtn.classList.add("futuristic-btn");
+                    submitBtn.textContent = "Submit Question";
+                    submitBtn.addEventListener("click", () => {
+                        const q = inputField.value;
+                        socket.emit('participant_action', {
+                            action: 'suggest_question',
+                            question: q
+                        });
+                        localStorage.setItem("submittedQuestion", q);
+                        participantPhase = "update";
+                        localStorage.setItem("participantPhase", participantPhase);
+                        renderView();
+                    });
+                    interactionContent.appendChild(submitBtn);
+
+                } else {
+                    // Update question view
+                    infoHeading.textContent = "Ändert eure Frage";
+                    let p = document.createElement('p');
+                    p.textContent = "Wenn ihr wollt, könnt ihr eure Frage nochmal ändern. Überprüft etwa auf Tippfehler!";
+                    infoContent.appendChild(p);
+
+                    interactionHeading.textContent = "Eure Frage";
+                    let updateInput = document.createElement('input');
+                    updateInput.type = "text";
+                    updateInput.classList.add("input-field");
+                    updateInput.value = submittedQ;
+                    updateInput.id = "update_question_input";
+                    interactionContent.appendChild(updateInput);
+
+                    let updateBtn = document.createElement('button');
+                    updateBtn.classList.add("futuristic-btn");
+                    updateBtn.textContent = "Update";
+                    updateBtn.addEventListener("click", () => {
+                        const oldQ = submittedQ;
+                        const updatedQ = updateInput.value;
+                        socket.emit('participant_action', {
+                            action: 'update_question',
+                            oldQuestion: oldQ,
+                            newQuestion: updatedQ
+                        });
+                        localStorage.setItem("submittedQuestion", updatedQ);
+                        participantPhase = "give_answer";
+                        localStorage.setItem("participantPhase", participantPhase);
+                        renderView();
+                    });
+                    interactionContent.appendChild(updateBtn);
+                }
+            }
+
+        } else if (app_state.gamePhase === "answering") {
+            // give_answer view
+            infoHeading.textContent = "Hier die Frage:";
+            let currentQ = app_state.questions[app_state.currentQuestion] || "";
+            let questionText = document.createElement('p');
+            questionText.textContent = currentQ;
+            questionText.classList.add("question-text");
+            infoContent.appendChild(questionText);
+
+            interactionHeading.textContent = "Eure Antwort?";
+            let answerInput = document.createElement('input');
+            answerInput.type = "text";
+            answerInput.classList.add("input-field");
+            answerInput.placeholder = "Eure Antwort...";
+            answerInput.id = "answer_input";
+            interactionContent.appendChild(answerInput);
+
+            let answerBtn = document.createElement('button');
+            answerBtn.classList.add("futuristic-btn");
+            answerBtn.textContent = "Antwort abschicken";
+            answerBtn.addEventListener("click", () => {
+                const a = answerInput.value;
+                socket.emit('participant_action', {action: 'submit_answer', answer: a});
+                // stay at give_answer
+            });
+            interactionContent.appendChild(answerBtn);
+        } else {
+            // Unknown or loading phase
+            infoHeading.textContent = "Loading...";
+            let p = document.createElement('p');
+            p.textContent = "Please wait, retrieving data...";
+            infoContent.appendChild(p);
+        }
+    }
+
+    window.onload = () => {
+        fetch('/admin/get_state')
+            .then(response => response.json())
+            .then(state => {
+                app_state = state;
+                renderView();
+                // Connect to socket after initial load
+                socket = io();
+                socket.on('state_update', function(updated_state) {
+                    app_state = updated_state;
+                    // Check if submitted question is still valid
+                    submittedQ = localStorage.getItem("submittedQuestion") || "";
+                    renderView();
+                });
+            })
+            .catch(err => console.error('Error fetching initial state:', err));
+    };
+</script>
+</body>
+</html>

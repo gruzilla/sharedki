@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Screen</title>
+    <!-- Use Socket.IO client 4.6.1 -->
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js" integrity="sha384-KA7m0DwgQGmeRC6Xre3hJO+ZxpanOauVh4Czdqbg8lDKJ3bZZYVYmP+y4F31x40L" crossorigin="anonymous"></script>
+</head>
+<body>
+<h1>Admin Screen</h1>
+<div>
+    <h3>Current App State (Read-Only):</h3>
+    <pre id="state_display"></pre>
+</div>
+
+<div>
+    <h3>Update Current Question Index:</h3>
+    <input type="number" id="question_index_input" placeholder="New question index">
+    <button id="update_question_index_btn">Update</button>
+</div>
+
+<div>
+    <h3>Get AI Answer for Current Question</h3>
+    <button id="get_ai_answer_btn">Get AI Answer</button>
+    <p id="ai_answer_display"></p>
+</div>
+
+<div>
+    <h3>Update Current Game:</h3>
+    <select id="game_phase_select">
+      <option value="collecting">Collecting</option>
+      <option value="answering">Answering</option>
+    </select>
+    <button id="update_game_phase_btn">Update Game Phase</button>
+</div>
+
+<div>
+    <h3>Clear All Answers Of Current Question</h3>
+    <button id="clear_all_answers_btn">Clear All Answers</button>
+</div>
+
+<div>
+    <h3>Update App State (Raw JSON):</h3>
+    <textarea id="raw_state_input" style="width:300px; height:200px;"></textarea><br>
+    <button id="update_raw_state_btn">Update Full State</button>
+</div>
+
+<script>
+    var socket = io();
+    var app = {state:{}};
+
+    socket.on('state_update', function(state) {
+        app.state = state;
+        var strState = JSON.stringify(app.state, null, 2);
+        document.getElementById("state_display").textContent = strState;
+        document.getElementById("raw_state_input").value = strState;
+    });
+
+    document.getElementById("update_question_index_btn").addEventListener("click", () => {
+        const val = parseInt(document.getElementById("question_index_input").value, 10);
+        if (!isNaN(val)) {
+            fetch('/admin/update_state', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({currentQuestion: val})
+            });
+        }
+    });
+
+    document.getElementById("update_raw_state_btn").addEventListener("click", () => {
+        let raw = document.getElementById("raw_state_input").value.trim();
+        try {
+            let obj = JSON.parse(raw);
+            fetch('/admin/update_state', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(obj)
+            });
+        } catch (e) {
+            alert("Invalid JSON");
+        }
+    });
+
+    document.getElementById("update_game_phase_btn").addEventListener("click", () => {
+        const phase = document.getElementById("game_phase_select").value;
+        fetch('/admin/update_state', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({gamePhase: phase})
+        });
+    });
+
+    document.getElementById("clear_all_answers_btn").addEventListener("click", () => {
+        fetch('/admin/clear_answers', {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log("Answers cleared.");
+            } else {
+                console.error("Failed to clear answers.");
+            }
+        })
+        .catch(err => console.error("Error clearing answers:", err));
+    });
+
+    document.getElementById("get_ai_answer_btn").addEventListener("click", () => {
+        fetch('/admin/get_ai_answer', {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                // Display the AI answer on admin screen for convenience
+                document.getElementById("ai_answer_display").textContent = "AI Answer: " + data.answer;
+                console.log("AI answer retrieved:", data.answer);
+            } else {
+                console.error("Failed to get AI answer:", data.error);
+            }
+        })
+        .catch(err => console.error("Error calling AI answer endpoint:", err));
+    });
+
+
+    // On page load, fetch the current app state
+    window.onload = () => {
+        fetch('/admin/get_state')
+        .then(response => response.json())
+        .then(state => {
+            app_state = state;
+            document.getElementById("state_display").textContent = JSON.stringify(app_state, null, 2);
+            // Set the select to the current gamePhase value
+            document.getElementById("game_phase_select").value = app_state.gamePhase;
+            // Set the value of the question index input field to the currentQuestion from the app_state
+            document.getElementById("question_index_input").value = app_state.currentQuestion;
+        })
+        .catch(err => console.error('Error fetching initial state:', err));
+    };
+</script>
+</body>
+</html>

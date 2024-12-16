@@ -1,0 +1,163 @@
+/* General Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Roboto', sans-serif;
+    background: #0b0f1a;
+    color: #d1d1d1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* Subtle geometric pattern background (optional) */
+body::before {
+    content: "";
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+        45deg,
+        rgba(255,255,255,0.02),
+        rgba(255,255,255,0.02) 2px,
+        transparent 2px,
+        transparent 4px
+    );
+    pointer-events: none;
+    z-index: -1;
+}
+
+.game-header, .game-footer {
+    text-align: center;
+    padding: 1rem;
+    background: #0f1320;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+.game-title {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #00eaff;
+    text-transform: uppercase;
+    text-shadow: 0 0 8px #00eaff;
+    margin-bottom: 0.5rem;
+}
+
+.game-footer p {
+    font-size: 0.875rem;
+    color: #888;
+}
+
+.game-container {
+    flex: 1;
+    display: grid;
+    gap: 2rem;
+    padding: 2rem;
+    grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 800px) {
+    .game-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+.panel {
+    background: #101521;
+    padding: 2rem;
+    border: 1px solid #1f1f2e;
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+}
+
+/* Futuristic border glow effect */
+.panel::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    border: 2px solid #00eaff;
+    border-radius: 8px;
+    opacity: 0.2;
+    pointer-events: none;
+}
+
+.panel h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: #00eaff;
+    text-shadow: 0 0 4px #00eaff;
+}
+
+.question-text {
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    line-height: 1.5;
+}
+
+.answers-list {
+    list-style: none;
+    margin-top: 1rem;
+}
+
+.answers-list li {
+    background: #1a1e2f;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    transition: background 0.3s;
+}
+
+.answers-list li:hover {
+    background: #00eaff33;
+}
+
+.input-field {
+    width: 100%;
+    padding: 0.75rem;
+    background: #13172a;
+    border: none;
+    border-radius: 4px;
+    color: #d1d1d1;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    outline: none;
+    transition: box-shadow 0.3s;
+}
+
+.input-field:focus {
+    box-shadow: 0 0 8px #00eaffaa;
+}
+
+/* Futuristic Button */
+.futuristic-btn {
+    display: inline-block;
+    background: linear-gradient(90deg, #00eaff, #00ffa3);
+    color: #000;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    border: none;
+    font-size: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.futuristic-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 10px #00eaff, 0 0 20px #00eaff;
+}
+
+/* Make it look more "Tron"-like on hover */
+.futuristic-btn:active {
+    transform: translateY(1px);
+    box-shadow: none;
+}

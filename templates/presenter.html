@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Presenter Screen</title>
+    <!-- Use Socket.IO client 4.6.1 -->
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js" integrity="sha384-KA7m0DwgQGmeRC6Xre3hJO+ZxpanOauVh4Czdqbg8lDKJ3bZZYVYmP+y4F31x40L" crossorigin="anonymous"></script>
+    <!-- Include your CSS file -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+<header class="game-header">
+    <h1 class="game-title">CyberQuest Presenter</h1>
+</header>
+
+<main class="game-container">
+    <!-- Info Panel: Shows either collected questions (when collecting) or current question & answers (when answering) -->
+    <section class="panel info-panel" id="info_panel">
+        <!-- Dynamically updated by JS -->
+        <!-- When gamePhase="collecting": Show a welcome message and a list of collected questions -->
+        <!-- When gamePhase="answering": Show the current question and the list of answers -->
+        <h2 id="info_heading">Loading...</h2>
+        <div id="info_content"></div>
+    </section>
+
+    <!-- Interaction Panel: Could be used for future features, admin controls, or presenter-only tools -->
+    <section class="panel interaction-panel" id="interaction_panel">
+        <!-- Currently can remain empty or show a placeholder -->
+        <h2 id="interaction_heading">Info</h2>
+        <p id="interaction_content">No actions available yet.</p>
+    </section>
+</main>
+
+<footer class="game-footer">
+    <p>© 2084 CyberCorp. All rights reserved.</p>
+</footer>
+
+<script>
+    var socket;
+    var app_state = {};
+
+    function renderView() {
+        const infoHeading = document.getElementById("info_heading");
+        const infoContent = document.getElementById("info_content");
+        const interactionHeading = document.getElementById("interaction_heading");
+        const interactionContent = document.getElementById("interaction_content");
+        infoContent.innerHTML = ""; // clear old content
+
+        if (app_state.gamePhase === "collecting") {
+            // Show welcome and collected questions
+            infoHeading.textContent = "Gesammelte Fragen";
+            interactionContent.textContent = "Gebt nun eine Frage ein, die es euch leicht machen die KI zu von den anderen Gruppen zu unterscheiden!";
+            let p = document.createElement('p');
+            p.textContent = "";
+            infoContent.appendChild(p);
+
+            let ul = document.createElement('ul');
+            if (Array.isArray(app_state.questions)) {
+                app_state.questions.forEach(q => {
+                    let li = document.createElement('li');
+                    li.textContent = q;
+                    ul.appendChild(li);
+                });
+            }
+            infoContent.appendChild(ul);
+
+        } else if (app_state.gamePhase === "answering") {
+            // Show current question and answers
+            infoHeading.textContent = "Aktuelle Frage";
+            interactionContent.textContent = "Gebt nun eure Antwort auf diese Frage ein!";
+
+            let currentQ = app_state.questions[app_state.currentQuestion] || "";
+            let questionDiv = document.createElement('div');
+            questionDiv.textContent = currentQ;
+            questionDiv.classList.add("question-text");
+            infoContent.appendChild(questionDiv);
+
+            let answersHeading = document.createElement('h3');
+            answersHeading.textContent = "Antworten:";
+            infoContent.appendChild(answersHeading);
+
+            let answersList = document.createElement('ul');
+            answersList.classList.add("answers-list");
+            if (Array.isArray(app_state.currentAnswers)) {
+                app_state.currentAnswers.forEach(a => {
+                    let li = document.createElement('li');
+                    li.textContent = a;
+                    answersList.appendChild(li);
+                });
+            }
+            infoContent.appendChild(answersList);
+        } else {
+            // Default or unknown phase
+            infoHeading.textContent = "Loading...";
+            let p = document.createElement('p');
+            p.textContent = "Please wait, retrieving data...";
+            infoContent.appendChild(p);
+        }
+    }
+
+    window.onload = () => {
+        fetch('/admin/get_state')
+            .then(response => response.json())
+            .then(state => {
+                app_state = state;
+                renderView();
+                // After initial load, connect to socket and listen for updates
+                socket = io();
+                socket.on('state_update', function(updated_state) {
+                    app_state = updated_state;
+                    renderView();
+                });
+            })
+            .catch(err => console.error('Error fetching initial state:', err));
+    };
+</script>
+</body>
+</html>
