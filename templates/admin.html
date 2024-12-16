@@ -5,45 +5,58 @@
     <title>Admin Screen</title>
     <!-- Use Socket.IO client 4.6.1 -->
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js" integrity="sha384-KA7m0DwgQGmeRC6Xre3hJO+ZxpanOauVh4Czdqbg8lDKJ3bZZYVYmP+y4F31x40L" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
-<h1>Admin Screen</h1>
-<div>
-    <h3>Current App State (Read-Only):</h3>
-    <pre id="state_display"></pre>
-</div>
+<header class="game-header">
+    <h1 class="game-title">CyberQuest Admin</h1>
+</header>
 
-<div>
-    <h3>Update Current Question Index:</h3>
-    <input type="number" id="question_index_input" placeholder="New question index">
-    <button id="update_question_index_btn">Update</button>
-</div>
+<main class="game-container">
+    <section class="panel info-panel" id="info_panel">
+        <h3>Current App State (Read-Only):</h3>
+        <pre id="state_display"></pre>
+    </section>
 
-<div>
-    <h3>Get AI Answer for Current Question</h3>
-    <button id="get_ai_answer_btn">Get AI Answer</button>
-    <p id="ai_answer_display"></p>
-</div>
+    <section class="panel view-panel" id="view_panel">
+        <div>
+            <h3>Update Current Question Index:</h3>
+            <input class="input-field" type="number" id="question_index_input" placeholder="New question index">
+            <button class="futuristic-btn" id="update_question_index_btn">Update</button>
+        </div>
+        <div>&nbsp;</div>
+        <div>
+            <h3>Update Current Game Phase:</h3>
+            <select class="input-field" id="game_phase_select">
+              <option value="collecting">Collecting</option>
+              <option value="answering">Answering</option>
+            </select>
+            <button class="futuristic-btn" id="update_game_phase_btn">Update Game Phase</button>
+        </div>
+    </section>
 
-<div>
-    <h3>Update Current Game:</h3>
-    <select id="game_phase_select">
-      <option value="collecting">Collecting</option>
-      <option value="answering">Answering</option>
-    </select>
-    <button id="update_game_phase_btn">Update Game Phase</button>
-</div>
+    <section class="panel auto-panel" id="auto_panel">
+        <div>
+            <h3>Get AI Answer for Current Question</h3>
+            <button class="futuristic-btn" id="get_ai_answer_btn">Get AI Answer</button>
+            <p id="ai_answer_display"></p>
+        </div>
+        <div>&nbsp;</div>
+        <div>
+            <h3>Clear All Answers Of Current Question</h3>
+            <button class="futuristic-btn" id="clear_all_answers_btn">Clear All Answers</button>
+        </div>
+    </section>
 
-<div>
-    <h3>Clear All Answers Of Current Question</h3>
-    <button id="clear_all_answers_btn">Clear All Answers</button>
-</div>
+    <section class="panel data-panel" id="data_panel">
+        <h3>Update App State (Raw JSON):</h3>
+        <textarea class="input-field" id="raw_state_input" style="height: 300px;"></textarea><br>
+        <button class="futuristic-btn" id="update_raw_state_btn">Update Full State</button>
+    </section>
 
-<div>
-    <h3>Update App State (Raw JSON):</h3>
-    <textarea id="raw_state_input" style="width:300px; height:200px;"></textarea><br>
-    <button id="update_raw_state_btn">Update Full State</button>
-</div>
+
+</main>
 
 <script>
     var socket = io();
