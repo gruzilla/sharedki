@@ -42,6 +42,15 @@
         const infoContent = document.getElementById("info_content");
         const interactionHeading = document.getElementById("interaction_heading");
         const interactionContent = document.getElementById("interaction_content");
+        const existingAnswerInput = document.getElementById("answer_input");
+        const existingQuestionInput = document.getElementById("question_input");
+
+        // Save current contents
+        let currentInputValue = "";
+        const existingInput = document.getElementById("question_input");
+        if (existingInput) {
+            currentInputValue = existingInput.value;
+        }
 
         // Clear contents
         infoContent.innerHTML = "";
@@ -82,6 +91,9 @@
                     inputField.classList.add("input-field");
                     inputField.placeholder = "Eure Frage hier...";
                     inputField.id = "question_input";
+                    if (existingQuestionInput) {
+                        inputField.value = existingQuestionInput.value;
+                    }
                     interactionContent.appendChild(inputField);
 
                     let submitBtn = document.createElement('button');
@@ -150,6 +162,9 @@
             answerInput.classList.add("input-field");
             answerInput.placeholder = "Eure Antwort...";
             answerInput.id = "answer_input";
+            if (existingAnswerInput) {
+                answerInput.value = existingAnswerInput.value;
+            }
             interactionContent.appendChild(answerInput);
 
             let answerBtn = document.createElement('button');
