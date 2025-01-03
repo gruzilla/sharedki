@@ -111,6 +111,7 @@
                         renderView();
                     });
                     interactionContent.appendChild(submitBtn);
+                    document.getElementById('question_input').focus();
 
                 } else {
                     // Update question view
@@ -144,6 +145,7 @@
                         renderView();
                     });
                     interactionContent.appendChild(updateBtn);
+                    document.getElementById('update_question_input').focus();
                 }
             }
 
@@ -176,6 +178,7 @@
                 // stay at give_answer
             });
             interactionContent.appendChild(answerBtn);
+            document.getElementById('answer_input').focus();
         } else {
             // Unknown or loading phase
             infoHeading.textContent = "Loading...";
