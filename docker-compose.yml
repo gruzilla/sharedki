@@ -1,5 +1,3 @@
-version: '3'
-
 services:
 
   sharedki_flask_app:
