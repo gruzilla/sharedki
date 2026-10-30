@@ -7,14 +7,28 @@
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js" integrity="sha384-KA7m0DwgQGmeRC6Xre3hJO+ZxpanOauVh4Czdqbg8lDKJ3bZZYVYmP+y4F31x40L" crossorigin="anonymous"></script>
     <!-- Include your CSS file -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='session.js') }}"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
 <header class="game-header">
     <h1 class="game-title">CyberQuest Presenter</h1>
+    <div class="session-status">
+        Session: <strong id="current_session">not connected</strong>
+        <button class="futuristic-btn" id="change_session_btn" type="button">Change</button>
+    </div>
 </header>
 
-<main class="game-container">
+<section class="panel session-gate" id="session_gate">
+    <h2>Join a session</h2>
+    <p>Enter the shared session name before opening this screen.</p>
+    <form id="session_form">
+        <input class="input-field" id="session_name_input" type="text" placeholder="Session name" required>
+        <button class="futuristic-btn" type="submit">Join session</button>
+    </form>
+</section>
+
+<main class="game-container" id="game_screen" hidden>
     <!-- Info Panel: Shows either collected questions (when collecting) or current question & answers (when answering) -->
     <section class="panel info-panel" id="info_panel">
         <!-- Dynamically updated by JS -->
@@ -99,21 +113,15 @@
         }
     }
 
-    window.onload = () => {
-        fetch('/admin/get_state')
-            .then(response => response.json())
-            .then(state => {
-                app_state = state;
-                renderView();
-                // After initial load, connect to socket and listen for updates
-                socket = io();
-                socket.on('state_update', function(updated_state) {
-                    app_state = updated_state;
-                    renderView();
-                });
-            })
-            .catch(err => console.error('Error fetching initial state:', err));
-    };
+    function startSession() {
+        socket = io({auth: {session: sessionName}});
+        socket.on('state_update', function(updated_state) {
+            app_state = updated_state;
+            renderView();
+        });
+    }
+
+    window.onload = () => initializeSession(startSession);
 </script>
 </body>
 </html>

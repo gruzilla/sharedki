@@ -1,6 +1,5 @@
 from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO, emit
-import json
+from flask_socketio import SocketIO, emit, join_room
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
@@ -22,17 +21,42 @@ openAIClient = OpenAI(
     api_key=openai_key
 )
 
-# Global application state
-global app_state;
-app_state = {
-    "currentQuestion": 0,
-    "currentAnswers": [],
-    "storedAnswers": {},  # {questionIndex: [list_of_answers]}
-    "questions": ["Wie lautet der Name eurer Gruppe?", "Wo seid ihr gerade?"],
-    "gamePhase": "collecting",  # new state: either "collecting" or "answering"
-    "gptModel": "gpt-5.6-terra",
-    "systemPrompt": "You are a direct german teenager. Always answer in german. You represent a group of teenagers. Spare words, as if in a tv quiz show, no unnecessary phrases or introductions. Do not restate parts of the question in the answer. Do not quote your answer. If you are asked about personal questions like name, age, gender, make up an austrian teenager, aged 14, male, called Nikolaus living in vienna visiting a workshop in the Lila Raum in the Technisches Museum Wien."
-}
+def create_game_state():
+    return {
+        "currentQuestion": 0,
+        "currentAnswers": [],
+        "storedAnswers": {},  # {questionIndex: [list_of_answers]}
+        "questions": ["Wie lautet der Name eurer Gruppe?", "Wo seid ihr gerade?"],
+        "gamePhase": "collecting",
+        "gptModel": "gpt-5.6-terra",
+        "systemPrompt": "You are a direct german teenager. Always answer in german. You represent a group of teenagers. Spare words, as if in a tv quiz show, no unnecessary phrases or introductions. Do not restate parts of the question in the answer. Do not quote your answer. If you are asked about personal questions like name, age, gender, make up an austrian teenager, aged 14, male, called Nikolaus living in vienna visiting a workshop in the Lila Raum in the Technisches Museum Wien."
+    }
+
+
+game_sessions = {}
+client_sessions = {}
+
+
+def normalize_session_name(name):
+    if not isinstance(name, str):
+        return ""
+    return " ".join(name.strip().lower().split())
+
+
+def get_game_state(session_name):
+    return game_sessions.setdefault(session_name, create_game_state())
+
+
+def session_from_http_request():
+    session_name = normalize_session_name(request.args.get("session"))
+    if not session_name:
+        return None, (jsonify(success=False, error="Session name is required"), 400)
+    return session_name, None
+
+
+def session_room(session_name):
+    return f"game:{session_name}"
+
 
 # Avoid duplicate API calls for the same model, prompt, and question.
 ai_answer_cache = {}
@@ -63,98 +87,113 @@ def admin():
 
 @app.route('/admin/get_state', methods=['GET'])
 def get_state():
-    global app_state
-    return jsonify(app_state)
+    session_name, error = session_from_http_request()
+    if error:
+        return error
+    return jsonify(get_game_state(session_name))
+
 
 @app.route('/admin/clear_answers', methods=['POST'])
 def clear_answers():
-    global app_state
+    session_name, error = session_from_http_request()
+    if error:
+        return error
+    app_state = get_game_state(session_name)
     cq = app_state["currentQuestion"]
-    # Only remove currentAnswers from storedAnswers for the currentQuestion
+
     if cq in app_state["storedAnswers"]:
-        # Filter out any answer currently in currentAnswers
         app_state["storedAnswers"][cq] = [
-            ans for ans in app_state["storedAnswers"][cq] 
-            if ans not in app_state["currentAnswers"]
+            answer for answer in app_state["storedAnswers"][cq]
+            if answer not in app_state["currentAnswers"]
         ]
-    # Clear the currentAnswers
     app_state["currentAnswers"] = []
-    socketio.emit('state_update', app_state)
+    socketio.emit('state_update', app_state, room=session_room(session_name))
     return jsonify(success=True)
 
-# REST endpoint for admin to update global state (e.g. currentQuestion)
+
 @app.route('/admin/update_state', methods=['POST'])
 def admin_update_state():
-    global app_state
-    # Expecting JSON with keys to update, for example: {"currentQuestion": 1}
-    data = request.get_json()
+    session_name, error = session_from_http_request()
+    if error:
+        return error
+    app_state = get_game_state(session_name)
+    data = request.get_json() or {}
     old_index = app_state["currentQuestion"]
 
     for key, value in data.items():
-        # If the currentQuestion is being updated, before we actually change it,
-        # move currentAnswers to storedAnswers and clear currentAnswers.
         if key == "currentQuestion" and value != old_index:
-            # Move currentAnswers to storedAnswers for the old question index
             if old_index not in app_state["storedAnswers"]:
                 app_state["storedAnswers"][old_index] = []
             app_state["storedAnswers"][old_index].extend(app_state["currentAnswers"])
-
-            # Load answers for the new question index, or empty if none exist
             app_state["currentAnswers"] = app_state["storedAnswers"].get(value, [])
-
-        # Update the state
         app_state[key] = value
-    # Broadcast the new state to all connected clients
-    socketio.emit('state_update', app_state)
+
+    socketio.emit('state_update', app_state, room=session_room(session_name))
     return jsonify(success=True)
 
-# On client connect, send the current state
-@socketio.on('connect')
-def handle_connect():
-    global app_state
-    emit('state_update', app_state)
 
-# Example event to handle participant suggestions or answers from clients
+@socketio.on('connect')
+def handle_connect(auth):
+    session_name = normalize_session_name((auth or {}).get("session"))
+    if not session_name:
+        return False
+
+    client_sessions[request.sid] = session_name
+    join_room(session_room(session_name))
+    emit('state_update', get_game_state(session_name))
+
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    client_sessions.pop(request.sid, None)
+
+
 @socketio.on('participant_action')
 def handle_participant_action(data):
-    global app_state
-    # data might be something like {"action": "suggest_question", "question": "Some question..."}
+    session_name = client_sessions.get(request.sid)
+    if not session_name:
+        return
+
+    app_state = get_game_state(session_name)
     action = data.get("action")
+    state_changed = False
+
     if action == "suggest_question":
-        suggestion = data.get("question", "")
-        if suggestion.strip() and suggestion not in app_state["questions"]:
+        suggestion = data.get("question", "").strip()
+        if suggestion and suggestion not in app_state["questions"]:
             app_state["questions"].append(suggestion)
-            socketio.emit('state_update', app_state)
+            state_changed = True
     elif action == "submit_answer":
-        answer = data.get("answer", "")
-        if answer.strip():
+        answer = data.get("answer", "").strip()
+        if answer:
             app_state["currentAnswers"].append(answer)
-            socketio.emit('state_update', app_state)
+            state_changed = True
     elif action == "update_question":
         old_q = data.get("oldQuestion", "").strip()
         new_q = data.get("newQuestion", "").strip()
-
         if old_q and new_q:
-            # Attempt to find the old question in the list
             try:
-                idx = app_state["questions"].index(old_q)
-                app_state["questions"][idx] = new_q
-                socketio.emit('state_update', app_state)
+                index = app_state["questions"].index(old_q)
+                app_state["questions"][index] = new_q
+                state_changed = True
             except ValueError:
-                # old_q not found in the list, you might want to handle this case
                 pass
 
-    # Additional participant actions could be handled here.
+    if state_changed:
+        socketio.emit('state_update', app_state, room=session_room(session_name))
+
 
 @app.route('/admin/get_ai_answer', methods=['POST'])
 def get_ai_answer():
-    global app_state
-    # Get the current question
+    session_name, error = session_from_http_request()
+    if error:
+        return error
+    app_state = get_game_state(session_name)
     cq = app_state["currentQuestion"]
-    if cq < len(app_state["questions"]):
-        question = app_state["questions"][cq]
-    else:
+
+    if not 0 <= cq < len(app_state["questions"]):
         return jsonify(success=False, error="Invalid question index"), 400
+    question = app_state["questions"][cq]
 
     cache_key = (
         app_state["gptModel"],
@@ -179,9 +218,8 @@ def get_ai_answer():
         except Exception as e:
             return jsonify(success=False, error=str(e)), 500
 
-    # Store the AI answer - for example, append to currentAnswers or storedAnswers
     app_state["currentAnswers"].append(ai_answer)
-    socketio.emit('state_update', app_state)
+    socketio.emit('state_update', app_state, room=session_room(session_name))
     return jsonify(success=True, answer=ai_answer)
 
 if __name__ == '__main__':

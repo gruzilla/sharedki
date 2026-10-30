@@ -3,17 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <title>Admin Screen</title>
-    <!-- Use Socket.IO client 4.6.1 -->
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js" integrity="sha384-KA7m0DwgQGmeRC6Xre3hJO+ZxpanOauVh4Czdqbg8lDKJ3bZZYVYmP+y4F31x40L" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='session.js') }}"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
 <header class="game-header">
     <h1 class="game-title">CyberQuest Admin</h1>
+    <div class="session-status">
+        Session: <strong id="current_session">not connected</strong>
+        <button class="futuristic-btn" id="change_session_btn" type="button">Change</button>
+    </div>
 </header>
 
-<main class="game-container">
+<section class="panel session-gate" id="session_gate">
+    <h2>Join a session</h2>
+    <p>Enter the shared session name before opening this screen.</p>
+    <form id="session_form">
+        <input class="input-field" id="session_name_input" type="text" placeholder="Session name" required>
+        <button class="futuristic-btn" type="submit">Join session</button>
+    </form>
+</section>
+
+<main class="game-container" id="game_screen" hidden>
     <section class="panel info-panel" id="info_panel">
         <h3>Current App State (Read-Only):</h3>
         <pre id="state_display"></pre>
@@ -29,8 +42,8 @@
         <div>
             <h3>Update Current Game Phase:</h3>
             <select class="input-field" id="game_phase_select">
-              <option value="collecting">Collecting</option>
-              <option value="answering">Answering</option>
+                <option value="collecting">Collecting</option>
+                <option value="answering">Answering</option>
             </select>
             <button class="futuristic-btn" id="update_game_phase_btn">Update Game Phase</button>
         </div>
@@ -54,102 +67,78 @@
         <textarea class="input-field" id="raw_state_input" style="height: 300px;"></textarea><br>
         <button class="futuristic-btn" id="update_raw_state_btn">Update Full State</button>
     </section>
-
-
 </main>
 
 <script>
-    var socket = io();
-    var app = {state:{}};
+    var socket;
+    var app = {state: {}};
 
-    socket.on('state_update', function(state) {
+    function handleStateUpdate(state) {
         app.state = state;
-        var strState = JSON.stringify(app.state, null, 2);
-        document.getElementById("state_display").textContent = strState;
-        document.getElementById("raw_state_input").value = strState;
-    });
+        const stringState = JSON.stringify(state, null, 2);
+        document.getElementById("state_display").textContent = stringState;
+        document.getElementById("raw_state_input").value = stringState;
+        document.getElementById("game_phase_select").value = state.gamePhase;
+        document.getElementById("question_index_input").value = state.currentQuestion;
+    }
+
+    function postState(data) {
+        return fetch(sessionUrl('/admin/update_state'), {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+    }
 
     document.getElementById("update_question_index_btn").addEventListener("click", () => {
-        const val = parseInt(document.getElementById("question_index_input").value, 10);
-        if (!isNaN(val)) {
-            fetch('/admin/update_state', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({currentQuestion: val})
-            });
+        const value = parseInt(document.getElementById("question_index_input").value, 10);
+        if (!isNaN(value)) {
+            postState({currentQuestion: value});
         }
     });
 
     document.getElementById("update_raw_state_btn").addEventListener("click", () => {
-        let raw = document.getElementById("raw_state_input").value.trim();
         try {
-            let obj = JSON.parse(raw);
-            fetch('/admin/update_state', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(obj)
-            });
-        } catch (e) {
+            postState(JSON.parse(document.getElementById("raw_state_input").value.trim()));
+        } catch (error) {
             alert("Invalid JSON");
         }
     });
 
     document.getElementById("update_game_phase_btn").addEventListener("click", () => {
-        const phase = document.getElementById("game_phase_select").value;
-        fetch('/admin/update_state', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({gamePhase: phase})
-        });
+        postState({gamePhase: document.getElementById("game_phase_select").value});
     });
 
     document.getElementById("clear_all_answers_btn").addEventListener("click", () => {
-        fetch('/admin/clear_answers', {
-            method: 'POST'
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                console.log("Answers cleared.");
-            } else {
-                console.error("Failed to clear answers.");
-            }
-        })
-        .catch(err => console.error("Error clearing answers:", err));
+        fetch(sessionUrl('/admin/clear_answers'), {method: 'POST'})
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    console.error("Failed to clear answers.");
+                }
+            })
+            .catch(error => console.error("Error clearing answers:", error));
     });
 
     document.getElementById("get_ai_answer_btn").addEventListener("click", () => {
-        fetch('/admin/get_ai_answer', {
-            method: 'POST'
-        })
-        .then(response => response.json())
-        .then(data => {
-            if(data.success) {
-                // Display the AI answer on admin screen for convenience
-                document.getElementById("ai_answer_display").textContent = "AI Answer: " + data.answer;
-                console.log("AI answer retrieved:", data.answer);
-            } else {
-                console.error("Failed to get AI answer:", data.error);
-            }
-        })
-        .catch(err => console.error("Error calling AI answer endpoint:", err));
+        fetch(sessionUrl('/admin/get_ai_answer'), {method: 'POST'})
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById("ai_answer_display").textContent = "AI Answer: " + data.answer;
+                } else {
+                    console.error("Failed to get AI answer:", data.error);
+                }
+            })
+            .catch(error => console.error("Error calling AI answer endpoint:", error));
     });
 
+    function startSession() {
+        socket = io({auth: {session: sessionName}});
+        socket.on('state_update', handleStateUpdate);
+    }
 
-    // On page load, fetch the current app state
-    window.onload = () => {
-        fetch('/admin/get_state')
-        .then(response => response.json())
-        .then(state => {
-            app_state = state;
-            document.getElementById("state_display").textContent = JSON.stringify(app_state, null, 2);
-            // Set the select to the current gamePhase value
-            document.getElementById("game_phase_select").value = app_state.gamePhase;
-            // Set the value of the question index input field to the currentQuestion from the app_state
-            document.getElementById("question_index_input").value = app_state.currentQuestion;
-        })
-        .catch(err => console.error('Error fetching initial state:', err));
-    };
+    window.onload = () => initializeSession(startSession);
 </script>
 </body>
 </html>

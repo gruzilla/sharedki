@@ -6,14 +6,28 @@
     <!-- Use the same Socket.IO version and CSS -->
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js" integrity="sha384-KA7m0DwgQGmeRC6Xre3hJO+ZxpanOauVh4Czdqbg8lDKJ3bZZYVYmP+y4F31x40L" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='session.js') }}"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
 <header class="game-header">
     <h1 class="game-title">CyberQuest Participant</h1>
+    <div class="session-status">
+        Session: <strong id="current_session">not connected</strong>
+        <button class="futuristic-btn" id="change_session_btn" type="button">Change</button>
+    </div>
 </header>
 
-<main class="game-container">
+<section class="panel session-gate" id="session_gate">
+    <h2>Join a session</h2>
+    <p>Enter the shared session name before opening this screen.</p>
+    <form id="session_form">
+        <input class="input-field" id="session_name_input" type="text" placeholder="Session name" required>
+        <button class="futuristic-btn" type="submit">Join session</button>
+    </form>
+</section>
+
+<main class="game-container" id="game_screen" hidden>
     <!-- Info Panel: shows instructions, current question, etc. -->
     <section class="panel info-panel" id="info_panel">
         <h2 id="info_heading">Loading...</h2>
@@ -34,8 +48,8 @@
 <script>
     var socket;
     var app_state = {};
-    var participantPhase = localStorage.getItem("participantPhase") || "welcome";
-    var submittedQ = localStorage.getItem("submittedQuestion") || "";
+    var participantPhase = "welcome";
+    var submittedQ = "";
 
     function renderView() {
         const infoHeading = document.getElementById("info_heading");
@@ -71,7 +85,7 @@
                 continueBtn.textContent = "Los gehts!";
                 continueBtn.addEventListener("click", () => {
                     participantPhase = "insert";
-                    localStorage.setItem("participantPhase", participantPhase);
+                    localStorage.setItem(sessionStorageKey("participantPhase"), participantPhase);
                     renderView();
                 });
                 interactionContent.appendChild(continueBtn);
@@ -105,9 +119,9 @@
                             action: 'suggest_question',
                             question: q
                         });
-                        localStorage.setItem("submittedQuestion", q);
+                        localStorage.setItem(sessionStorageKey("submittedQuestion"), q);
                         participantPhase = "update";
-                        localStorage.setItem("participantPhase", participantPhase);
+                        localStorage.setItem(sessionStorageKey("participantPhase"), participantPhase);
                         renderView();
                     });
                     interactionContent.appendChild(submitBtn);
@@ -139,9 +153,9 @@
                             oldQuestion: oldQ,
                             newQuestion: updatedQ
                         });
-                        localStorage.setItem("submittedQuestion", updatedQ);
+                        localStorage.setItem(sessionStorageKey("submittedQuestion"), updatedQ);
                         participantPhase = "give_answer";
-                        localStorage.setItem("participantPhase", participantPhase);
+                        localStorage.setItem(sessionStorageKey("participantPhase"), participantPhase);
                         renderView();
                     });
                     interactionContent.appendChild(updateBtn);
@@ -188,23 +202,19 @@
         }
     }
 
-    window.onload = () => {
-        fetch('/admin/get_state')
-            .then(response => response.json())
-            .then(state => {
-                app_state = state;
-                renderView();
-                // Connect to socket after initial load
-                socket = io();
-                socket.on('state_update', function(updated_state) {
-                    app_state = updated_state;
-                    // Check if submitted question is still valid
-                    submittedQ = localStorage.getItem("submittedQuestion") || "";
-                    renderView();
-                });
-            })
-            .catch(err => console.error('Error fetching initial state:', err));
-    };
+    function startSession() {
+        participantPhase = localStorage.getItem(sessionStorageKey("participantPhase")) || "welcome";
+        submittedQ = localStorage.getItem(sessionStorageKey("submittedQuestion")) || "";
+
+        socket = io({auth: {session: sessionName}});
+        socket.on('state_update', function(updated_state) {
+            app_state = updated_state;
+            submittedQ = localStorage.getItem(sessionStorageKey("submittedQuestion")) || "";
+            renderView();
+        });
+    }
+
+    window.onload = () => initializeSession(startSession);
 </script>
 </body>
 </html>

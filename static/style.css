@@ -161,3 +161,28 @@ body::before {
     transform: translateY(1px);
     box-shadow: none;
 }
+
+[hidden] {
+    display: none !important;
+}
+
+.session-status {
+    margin-top: 0.5rem;
+    color: #aaa;
+}
+
+.session-status .futuristic-btn {
+    margin-left: 0.75rem;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.75rem;
+}
+
+.session-gate {
+    width: min(500px, calc(100% - 2rem));
+    margin: auto;
+}
+
+.session-gate h2,
+.session-gate p {
+    margin-bottom: 1rem;
+}
