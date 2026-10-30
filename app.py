@@ -34,6 +34,9 @@ app_state = {
     "systemPrompt": "You are a direct german teenager. Always answer in german. You represent a group of teenagers. Spare words, as if in a tv quiz show, no unnecessary phrases or introductions. Do not restate parts of the question in the answer. Do not quote your answer. If you are asked about personal questions like name, age, gender, make up an austrian teenager, aged 14, male, called Nikolaus living in vienna visiting a workshop in the Lila Raum in the Technisches Museum Wien."
 }
 
+# Avoid duplicate API calls for the same model, prompt, and question.
+ai_answer_cache = {}
+
 @app.route('/')
 def index():
     # Simple landing page listing roles
@@ -153,19 +156,28 @@ def get_ai_answer():
     else:
         return jsonify(success=False, error="Invalid question index"), 400
 
-    # Call the OpenAI API to get an answer (example using gpt-3.5-turbo)
-    try:
-        completion = openAIClient.chat.completions.create(
-            model=app_state["gptModel"],
-            messages=[{"role": "system", "content": app_state["systemPrompt"]},
-                      {"role": "user", "content": question}],
-            max_tokens=150,
-            temperature=0.7
-        )
-        print(completion)
-        ai_answer = completion.choices[0].message.content.strip()
-    except Exception as e:
-        return jsonify(success=False, error=str(e)), 500
+    cache_key = (
+        app_state["gptModel"],
+        app_state["systemPrompt"],
+        question,
+    )
+    ai_answer = ai_answer_cache.get(cache_key)
+
+    if ai_answer is None:
+        try:
+            completion = openAIClient.chat.completions.create(
+                model=app_state["gptModel"],
+                messages=[
+                    {"role": "system", "content": app_state["systemPrompt"]},
+                    {"role": "user", "content": question},
+                ],
+                max_completion_tokens=150,
+                temperature=0.7,
+            )
+            ai_answer = completion.choices[0].message.content.strip()
+            ai_answer_cache[cache_key] = ai_answer
+        except Exception as e:
+            return jsonify(success=False, error=str(e)), 500
 
     # Store the AI answer - for example, append to currentAnswers or storedAnswers
     app_state["currentAnswers"].append(ai_answer)
