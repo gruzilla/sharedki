@@ -1,9 +1,15 @@
 # Variables
 DOCKER_COMPOSE_FILE = docker-compose.yml
+DEVELOPMENT_DOCKER_COMPOSE_FILE = development-docker-compose.yml
 
 # Default target
 .PHONY: all
 all: build up
+
+# Start a local development server with live code reloading
+.PHONY: dev
+dev:
+	docker-compose -f $(DEVELOPMENT_DOCKER_COMPOSE_FILE) up --build
 
 # Build the Docker containers
 .PHONY: build
