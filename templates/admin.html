@@ -51,6 +51,15 @@
 
     <section class="panel auto-panel" id="auto_panel">
         <div>
+            <h3>Game AI Mode</h3>
+            <select class="input-field" id="ai_mode_select">
+                <option value="conversation">Conversation</option>
+                <option value="independend">Independend</option>
+            </select>
+            <button class="futuristic-btn" id="update_ai_mode_btn">Update AI Mode</button>
+        </div>
+        <div>&nbsp;</div>
+        <div>
             <h3>Get AI Answer for Current Question</h3>
             <button class="futuristic-btn" id="get_ai_answer_btn">Get AI Answer</button>
             <p id="ai_answer_display"></p>
@@ -79,6 +88,7 @@
         document.getElementById("state_display").textContent = stringState;
         document.getElementById("raw_state_input").value = stringState;
         document.getElementById("game_phase_select").value = state.gamePhase;
+        document.getElementById("ai_mode_select").value = state.aiMode;
         document.getElementById("question_index_input").value = state.currentQuestion;
     }
 
@@ -107,6 +117,10 @@
 
     document.getElementById("update_game_phase_btn").addEventListener("click", () => {
         postState({gamePhase: document.getElementById("game_phase_select").value});
+    });
+
+    document.getElementById("update_ai_mode_btn").addEventListener("click", () => {
+        postState({aiMode: document.getElementById("ai_mode_select").value});
     });
 
     document.getElementById("clear_all_answers_btn").addEventListener("click", () => {

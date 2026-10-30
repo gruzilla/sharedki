@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
 from openai import OpenAI
 import os
+from threading import Lock
 from dotenv import load_dotenv
 
 app = Flask(__name__)
@@ -28,6 +29,7 @@ def create_game_state():
         "storedAnswers": {},  # {questionIndex: [list_of_answers]}
         "questions": ["Wie lautet der Name eurer Gruppe?", "Wo seid ihr gerade?"],
         "gamePhase": "collecting",
+        "aiMode": "conversation",
         "gptModel": "gpt-5.6-terra",
         "systemPrompt": "You are a direct german teenager. Always answer in german. You represent a group of teenagers. Spare words, as if in a tv quiz show, no unnecessary phrases or introductions. Do not restate parts of the question in the answer. Do not quote your answer. If you are asked about personal questions like name, age, gender, make up an austrian teenager, aged 14, male, called Nikolaus living in vienna visiting a workshop in the Lila Raum in the Technisches Museum Wien."
     }
@@ -58,8 +60,79 @@ def session_room(session_name):
     return f"game:{session_name}"
 
 
-# Avoid duplicate API calls for the same model, prompt, and question.
+# Independent mode reuses answers for identical requests.
 ai_answer_cache = {}
+
+# Conversation IDs stay server-side and are bound to a normalized game-session name.
+openai_conversations = {}
+ai_request_locks = {}
+
+
+def get_ai_request_lock(session_name):
+    return ai_request_locks.setdefault(session_name, Lock())
+
+
+def get_openai_conversation_id(session_name, app_state):
+    signature = (app_state["gptModel"], app_state["systemPrompt"])
+    conversation_state = openai_conversations.get(session_name)
+
+    if conversation_state and conversation_state["signature"] == signature:
+        return conversation_state["id"]
+
+    conversation = openAIClient.conversations.create(
+        metadata={"game_session": session_name[:512]},
+        items=[
+            {
+                "type": "message",
+                "role": "system",
+                "content": app_state["systemPrompt"],
+            }
+        ],
+    )
+    openai_conversations[session_name] = {
+        "id": conversation.id,
+        "signature": signature,
+    }
+    return conversation.id
+
+
+def get_independent_ai_answer(app_state, question):
+    cache_key = (
+        app_state["gptModel"],
+        app_state["systemPrompt"],
+        question,
+    )
+    ai_answer = ai_answer_cache.get(cache_key)
+    if ai_answer is not None:
+        return ai_answer
+
+    completion = openAIClient.chat.completions.create(
+        model=app_state["gptModel"],
+        messages=[
+            {"role": "system", "content": app_state["systemPrompt"]},
+            {"role": "user", "content": question},
+        ],
+        max_completion_tokens=150,
+    )
+    ai_answer = completion.choices[0].message.content.strip()
+    ai_answer_cache[cache_key] = ai_answer
+    return ai_answer
+
+
+def get_conversation_ai_answer(session_name, app_state, question):
+    conversation_id = get_openai_conversation_id(session_name, app_state)
+    response = openAIClient.responses.create(
+        model=app_state["gptModel"],
+        conversation=conversation_id,
+        input=[
+            {
+                "role": "user",
+                "content": question,
+            }
+        ],
+        max_output_tokens=150,
+    )
+    return response.output_text.strip()
 
 @app.route('/')
 def index():
@@ -118,6 +191,13 @@ def admin_update_state():
         return error
     app_state = get_game_state(session_name)
     data = request.get_json() or {}
+    requested_ai_mode = data.get("aiMode")
+    if requested_ai_mode is not None and requested_ai_mode not in {
+        "conversation",
+        "independend",
+    }:
+        return jsonify(success=False, error="Invalid AI mode"), 400
+
     old_index = app_state["currentQuestion"]
 
     for key, value in data.items():
@@ -177,7 +257,9 @@ def handle_participant_action(data):
                 app_state["questions"][index] = new_q
                 state_changed = True
             except ValueError:
-                pass
+                if new_q not in app_state["questions"]:
+                    app_state["questions"].append(new_q)
+                    state_changed = True
 
     if state_changed:
         socketio.emit('state_update', app_state, room=session_room(session_name))
@@ -195,30 +277,20 @@ def get_ai_answer():
         return jsonify(success=False, error="Invalid question index"), 400
     question = app_state["questions"][cq]
 
-    cache_key = (
-        app_state["gptModel"],
-        app_state["systemPrompt"],
-        question,
-    )
-    ai_answer = ai_answer_cache.get(cache_key)
-
-    if ai_answer is None:
+    with get_ai_request_lock(session_name):
         try:
-            completion = openAIClient.chat.completions.create(
-                model=app_state["gptModel"],
-                messages=[
-                    {"role": "system", "content": app_state["systemPrompt"]},
-                    {"role": "user", "content": question},
-                ],
-                max_completion_tokens=150,
-                temperature=0.7,
-            )
-            ai_answer = completion.choices[0].message.content.strip()
-            ai_answer_cache[cache_key] = ai_answer
+            if app_state["aiMode"] == "conversation":
+                ai_answer = get_conversation_ai_answer(
+                    session_name,
+                    app_state,
+                    question,
+                )
+            else:
+                ai_answer = get_independent_ai_answer(app_state, question)
         except Exception as e:
             return jsonify(success=False, error=str(e)), 500
 
-    app_state["currentAnswers"].append(ai_answer)
+        app_state["currentAnswers"].append(ai_answer)
     socketio.emit('state_update', app_state, room=session_room(session_name))
     return jsonify(success=True, answer=ai_answer)
 
