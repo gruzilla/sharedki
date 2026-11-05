@@ -1,298 +1,380 @@
-from flask import Flask, render_template, request, jsonify
+from collections import Counter
+from datetime import datetime, timezone
+import json
+import os
+import re
+import sqlite3
+from threading import Lock
+
+from dotenv import load_dotenv
+from flask import Flask, jsonify, render_template, request, session
 from flask_socketio import SocketIO, emit, join_room
 from openai import OpenAI
-import os
-from threading import Lock
-from dotenv import load_dotenv
+from werkzeug.security import check_password_hash, generate_password_hash
 
+load_dotenv()
 app = Flask(__name__)
-# First, try to read from existing environment variables
-secret_key = os.environ.get("FLASK_SECRET")
-openai_key = os.environ.get("OPENAI_API_KEY")
-# If not found, load the .env file and then try again
-if not openai_key:
-    load_dotenv()  # This will set variables from .env if they're not already set
-    openai_key = os.getenv("OPENAI_API_KEY")
-    secret_key = os.getenv("FLASK_SECRET")
-
-app.config['SECRET_KEY'] = secret_key
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET")
 socketio = SocketIO(app)
-# Set your OpenAI API Key
-openAIClient = OpenAI(
-    api_key=openai_key
-)
+openAIClient = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+DATABASE_PATH = os.environ.get("DATABASE_PATH", os.path.join(app.root_path, "data", "cyberquest.db"))
+SAVEGAMES_PATH = os.environ.get("SAVEGAMES_PATH", os.path.join(app.root_path, "savegames"))
+VALID_AI_MODES = {"conversation", "independend"}
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
 
 def create_game_state():
     return {
-        "currentQuestion": 0,
-        "currentAnswers": [],
-        "storedAnswers": {},  # {questionIndex: [list_of_answers]}
+        "currentQuestion": 0, "currentAnswers": [], "storedAnswers": {},
         "questions": ["Wie lautet der Name eurer Gruppe?", "Wo seid ihr gerade?"],
-        "gamePhase": "collecting",
-        "aiMode": "conversation",
-        "gptModel": "gpt-5.6-terra",
-        "systemPrompt": "You are a direct german teenager. Always answer in german. You represent a group of teenagers. Spare words, as if in a tv quiz show, no unnecessary phrases or introductions. Do not restate parts of the question in the answer. Do not quote your answer. If you are asked about personal questions like name, age, gender, make up an austrian teenager, aged 14, male, called Nikolaus living in vienna visiting a workshop in the Lila Raum in the Technisches Museum Wien."
+        "gamePhase": "collecting", "aiMode": "conversation", "gptModel": "gpt-5.6-terra",
+        "systemPrompt": "Du bist ein typischer österreichischer Teenager. Antworte immer auf Hochdeutsch. Verwende ab und an Apokopen und Kontraktionen. Du vertrittst eine Gruppe von Teenagern. Fasse dich kurz, wie in einer Fernsehquizshow – keine unnötigen Formulierungen oder Einleitungen. Wiederhole keine Teile der Frage in deiner Antwort. Zitiere in deinen Antwort nicht aus der Frage."
     }
 
+def normalize_name(value):
+    return "-".join(value.strip().lower().split()) if isinstance(value, str) else ""
 
-game_sessions = {}
-client_sessions = {}
+def db():
+    os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
+    connection = sqlite3.connect(DATABASE_PATH, timeout=10)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    return connection
 
+def init_db():
+    with db() as connection:
+        connection.executescript("""
+        CREATE TABLE IF NOT EXISTS game_sessions (
+            session_name TEXT PRIMARY KEY, pin_hash TEXT NOT NULL, state_json TEXT NOT NULL,
+            status TEXT NOT NULL, created_at TEXT NOT NULL, started_at TEXT, ended_at TEXT);
+        CREATE TABLE IF NOT EXISTS participants (
+            session_name TEXT NOT NULL, device_id TEXT NOT NULL, joined_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL, PRIMARY KEY(session_name, device_id),
+            FOREIGN KEY(session_name) REFERENCES game_sessions(session_name) ON DELETE CASCADE);
+        CREATE TABLE IF NOT EXISTS answers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, session_name TEXT NOT NULL,
+            question_index INTEGER NOT NULL, answer_text TEXT NOT NULL, source TEXT NOT NULL,
+            participant_id TEXT, created_at TEXT NOT NULL,
+            FOREIGN KEY(session_name) REFERENCES game_sessions(session_name) ON DELETE CASCADE);
+        """)
+init_db()
 
-def normalize_session_name(name):
-    if not isinstance(name, str):
-        return ""
-    return " ".join(name.strip().lower().split())
+def record_for(name):
+    with db() as connection:
+        return connection.execute("SELECT * FROM game_sessions WHERE session_name = ?", (name,)).fetchone()
 
+def state_for(record):
+    state = json.loads(record["state_json"])
+    state.update(sessionStatus=record["status"], startedAt=record["started_at"], endedAt=record["ended_at"])
+    return state
 
-def get_game_state(session_name):
-    return game_sessions.setdefault(session_name, create_game_state())
+def save_state(name, state):
+    clean = {k: v for k, v in state.items() if k not in {"sessionStatus", "startedAt", "endedAt"}}
+    with db() as connection:
+        connection.execute("UPDATE game_sessions SET state_json = ? WHERE session_name = ?",
+                           (json.dumps(clean, ensure_ascii=False), name))
 
+def teacher_names():
+    return session.setdefault("teacher_sessions", [])
 
-def session_from_http_request():
-    session_name = normalize_session_name(request.args.get("session"))
-    if not session_name:
-        return None, (jsonify(success=False, error="Session name is required"), 400)
-    return session_name, None
+def authorize(name):
+    names = teacher_names()
+    if name not in names:
+        names.append(name)
+        session["teacher_sessions"] = names
+        session.modified = True
 
+def requested_session(teacher=False):
+    name = normalize_name(request.args.get("session"))
+    if not name:
+        return None, None, (jsonify(success=False, error="Session ID is required"), 400)
+    record = record_for(name)
+    if record is None:
+        return name, None, (jsonify(success=False, error="Session not found"), 404)
+    if teacher and name not in teacher_names():
+        return name, record, (jsonify(success=False, error="Teacher login required"), 403)
+    return name, record, None
 
-def session_room(session_name):
-    return f"game:{session_name}"
+def room(name):
+    return "game:" + name
 
+def broadcast(name):
+    record = record_for(name)
+    if record:
+        socketio.emit("state_update", state_for(record), room=room(name))
 
-# Independent mode reuses answers for identical requests.
-ai_answer_cache = {}
+ai_cache = {}
+conversations = {}
+request_locks = {}
 
-# Conversation IDs stay server-side and are bound to a normalized game-session name.
-openai_conversations = {}
-ai_request_locks = {}
-
-
-def get_ai_request_lock(session_name):
-    return ai_request_locks.setdefault(session_name, Lock())
-
-
-def get_openai_conversation_id(session_name, app_state):
-    signature = (app_state["gptModel"], app_state["systemPrompt"])
-    conversation_state = openai_conversations.get(session_name)
-
-    if conversation_state and conversation_state["signature"] == signature:
-        return conversation_state["id"]
-
+def conversation_id(name, state):
+    signature = (state["gptModel"], state["systemPrompt"])
+    existing = conversations.get(name)
+    if existing and existing["signature"] == signature:
+        return existing["id"]
     conversation = openAIClient.conversations.create(
-        metadata={"game_session": session_name[:512]},
-        items=[
-            {
-                "type": "message",
-                "role": "system",
-                "content": app_state["systemPrompt"],
-            }
-        ],
-    )
-    openai_conversations[session_name] = {
-        "id": conversation.id,
-        "signature": signature,
-    }
+        metadata={"game_session": name[:512]},
+        items=[{"type": "message", "role": "system", "content": state["systemPrompt"]}])
+    conversations[name] = {"id": conversation.id, "signature": signature}
     return conversation.id
 
+def ai_answer(name, state, question):
+    if state["aiMode"] == "conversation":
+        response = openAIClient.responses.create(
+            model=state["gptModel"], conversation=conversation_id(name, state),
+            input=[{"role": "user", "content": question}], max_output_tokens=150)
+        return response.output_text.strip()
+    key = (state["gptModel"], state["systemPrompt"], question)
+    if key not in ai_cache:
+        response = openAIClient.chat.completions.create(
+            model=state["gptModel"],
+            messages=[{"role": "system", "content": state["systemPrompt"]},
+                      {"role": "user", "content": question}],
+            max_completion_tokens=150)
+        ai_cache[key] = response.choices[0].message.content.strip()
+    return ai_cache[key]
 
-def get_independent_ai_answer(app_state, question):
-    cache_key = (
-        app_state["gptModel"],
-        app_state["systemPrompt"],
-        question,
-    )
-    ai_answer = ai_answer_cache.get(cache_key)
-    if ai_answer is not None:
-        return ai_answer
-
-    completion = openAIClient.chat.completions.create(
-        model=app_state["gptModel"],
-        messages=[
-            {"role": "system", "content": app_state["systemPrompt"]},
-            {"role": "user", "content": question},
-        ],
-        max_completion_tokens=150,
-    )
-    ai_answer = completion.choices[0].message.content.strip()
-    ai_answer_cache[cache_key] = ai_answer
-    return ai_answer
-
-
-def get_conversation_ai_answer(session_name, app_state, question):
-    conversation_id = get_openai_conversation_id(session_name, app_state)
-    response = openAIClient.responses.create(
-        model=app_state["gptModel"],
-        conversation=conversation_id,
-        input=[
-            {
-                "role": "user",
-                "content": question,
-            }
-        ],
-        max_output_tokens=150,
-    )
-    return response.output_text.strip()
-
-@app.route('/')
+@app.route("/")
 def index():
-    # Simple landing page listing roles
-    return """
-    <h1>Select Screen</h1>
-    <ul>
-      <li><a href="/presenter">Presenter Screen</a></li>
-      <li><a href="/participant">Participant Screen</a></li>
-      <li><a href="/admin">Admin Screen</a></li>
-    </ul>
-    """
+    return render_template("index.html")
 
-@app.route('/presenter')
+@app.route("/presenter")
 def presenter():
-    return render_template('presenter.html')
+    return render_template("presenter.html")
 
-@app.route('/participant')
+@app.route("/participant")
 def participant():
-    return render_template('participant.html')
+    return render_template("participant.html")
 
-@app.route('/admin')
+@app.route("/admin")
 def admin():
-    return render_template('admin.html')
+    return render_template("admin.html")
 
-@app.route('/admin/get_state', methods=['GET'])
-def get_state():
-    session_name, error = session_from_http_request()
-    if error:
-        return error
-    return jsonify(get_game_state(session_name))
-
-
-@app.route('/admin/clear_answers', methods=['POST'])
-def clear_answers():
-    session_name, error = session_from_http_request()
-    if error:
-        return error
-    app_state = get_game_state(session_name)
-    cq = app_state["currentQuestion"]
-
-    if cq in app_state["storedAnswers"]:
-        app_state["storedAnswers"][cq] = [
-            answer for answer in app_state["storedAnswers"][cq]
-            if answer not in app_state["currentAnswers"]
-        ]
-    app_state["currentAnswers"] = []
-    socketio.emit('state_update', app_state, room=session_room(session_name))
-    return jsonify(success=True)
-
-
-@app.route('/admin/update_state', methods=['POST'])
-def admin_update_state():
-    session_name, error = session_from_http_request()
-    if error:
-        return error
-    app_state = get_game_state(session_name)
+@app.post("/admin/create_session")
+def create_session():
     data = request.get_json() or {}
-    requested_ai_mode = data.get("aiMode")
-    if requested_ai_mode is not None and requested_ai_mode not in {
-        "conversation",
-        "independend",
-    }:
-        return jsonify(success=False, error="Invalid AI mode"), 400
+    name, pin = normalize_name(data.get("session")), str(data.get("pin", ""))
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{2,39}", name):
+        return jsonify(success=False, error="Use 3–40 letters, numbers, hyphens, or underscores"), 400
+    if len(pin) < 6:
+        return jsonify(success=False, error="The teacher PIN must contain at least 6 characters"), 400
+    try:
+        with db() as connection:
+            connection.execute("INSERT INTO game_sessions VALUES (?, ?, ?, 'prepared', ?, NULL, NULL)",
+                               (name, generate_password_hash(pin), json.dumps(create_game_state()), now()))
+    except sqlite3.IntegrityError:
+        return jsonify(success=False, error="That session ID already exists"), 409
+    authorize(name)
+    return jsonify(success=True, session=name)
 
-    old_index = app_state["currentQuestion"]
+@app.post("/admin/login")
+def login():
+    data = request.get_json() or {}
+    name = normalize_name(data.get("session"))
+    record = record_for(name)
+    if record is None or not check_password_hash(record["pin_hash"], str(data.get("pin", ""))):
+        return jsonify(success=False, error="Unknown session ID or incorrect PIN"), 403
+    authorize(name)
+    return jsonify(success=True, session=name)
 
-    for key, value in data.items():
-        if key == "currentQuestion" and value != old_index:
-            if old_index not in app_state["storedAnswers"]:
-                app_state["storedAnswers"][old_index] = []
-            app_state["storedAnswers"][old_index].extend(app_state["currentAnswers"])
-            app_state["currentAnswers"] = app_state["storedAnswers"].get(value, [])
-        app_state[key] = value
+@app.get("/admin/get_state")
+def get_state():
+    _, record, error = requested_session(True)
+    return error if error else jsonify(state_for(record))
 
-    socketio.emit('state_update', app_state, room=session_room(session_name))
-    return jsonify(success=True)
-
-
-@socketio.on('connect')
-def handle_connect(auth):
-    session_name = normalize_session_name((auth or {}).get("session"))
-    if not session_name:
-        return False
-
-    client_sessions[request.sid] = session_name
-    join_room(session_room(session_name))
-    emit('state_update', get_game_state(session_name))
-
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    client_sessions.pop(request.sid, None)
-
-
-@socketio.on('participant_action')
-def handle_participant_action(data):
-    session_name = client_sessions.get(request.sid)
-    if not session_name:
-        return
-
-    app_state = get_game_state(session_name)
-    action = data.get("action")
-    state_changed = False
-
-    if action == "suggest_question":
-        suggestion = data.get("question", "").strip()
-        if suggestion and suggestion not in app_state["questions"]:
-            app_state["questions"].append(suggestion)
-            state_changed = True
-    elif action == "submit_answer":
-        answer = data.get("answer", "").strip()
-        if answer:
-            app_state["currentAnswers"].append(answer)
-            state_changed = True
-    elif action == "update_question":
-        old_q = data.get("oldQuestion", "").strip()
-        new_q = data.get("newQuestion", "").strip()
-        if old_q and new_q:
-            try:
-                index = app_state["questions"].index(old_q)
-                app_state["questions"][index] = new_q
-                state_changed = True
-            except ValueError:
-                if new_q not in app_state["questions"]:
-                    app_state["questions"].append(new_q)
-                    state_changed = True
-
-    if state_changed:
-        socketio.emit('state_update', app_state, room=session_room(session_name))
-
-
-@app.route('/admin/get_ai_answer', methods=['POST'])
-def get_ai_answer():
-    session_name, error = session_from_http_request()
+@app.post("/admin/update_state")
+def update_state():
+    name, record, error = requested_session(True)
     if error:
         return error
-    app_state = get_game_state(session_name)
-    cq = app_state["currentQuestion"]
+    state, data = state_for(record), request.get_json() or {}
+    if data.get("aiMode", state["aiMode"]) not in VALID_AI_MODES:
+        return jsonify(success=False, error="Invalid AI mode"), 400
+    old_index = state["currentQuestion"]
+    for key, value in data.items():
+        if key in {"sessionStatus", "startedAt", "endedAt"}:
+            continue
+        if key == "currentQuestion" and value != old_index:
+            state["storedAnswers"][str(old_index)] = list(state["currentAnswers"])
+            state["currentAnswers"] = list(state["storedAnswers"].get(str(value), []))
+        state[key] = value
+    save_state(name, state)
+    broadcast(name)
+    return jsonify(success=True)
 
-    if not 0 <= cq < len(app_state["questions"]):
+@app.post("/admin/start")
+def start():
+    name, record, error = requested_session(True)
+    if error:
+        return error
+    state = state_for(record)
+    state.update(currentQuestion=0, currentAnswers=[], storedAnswers={}, gamePhase="collecting")
+    clean = {k: v for k, v in state.items() if k not in {"sessionStatus", "startedAt", "endedAt"}}
+    with db() as connection:
+        connection.execute("DELETE FROM participants WHERE session_name = ?", (name,))
+        connection.execute("DELETE FROM answers WHERE session_name = ?", (name,))
+        connection.execute("UPDATE game_sessions SET state_json=?, status='live', started_at=?, ended_at=NULL WHERE session_name=?",
+                           (json.dumps(clean), now(), name))
+    conversations.pop(name, None)
+    broadcast(name)
+    return jsonify(success=True)
+
+@app.post("/admin/end")
+def end():
+    name, record, error = requested_session(True)
+    if error:
+        return error
+    if record["status"] != "live":
+        return jsonify(success=False, error="Only a live game can be ended"), 409
+    with db() as connection:
+        connection.execute("UPDATE game_sessions SET status='finished', ended_at=? WHERE session_name=?", (now(), name))
+    broadcast(name)
+    return jsonify(success=True, reportUrl="/admin/report?session=" + name)
+
+@app.post("/admin/clear_answers")
+def clear_answers():
+    name, record, error = requested_session(True)
+    if error:
+        return error
+    state = state_for(record)
+    index = state["currentQuestion"]
+    state["currentAnswers"] = []
+    state["storedAnswers"][str(index)] = []
+    save_state(name, state)
+    with db() as connection:
+        connection.execute("DELETE FROM answers WHERE session_name=? AND question_index=?", (name, index))
+    broadcast(name)
+    return jsonify(success=True)
+
+@app.post("/admin/get_ai_answer")
+def get_ai():
+    name, record, error = requested_session(True)
+    if error:
+        return error
+    if record["status"] != "live":
+        return jsonify(success=False, error="Start the game before requesting AI answers"), 409
+    state = state_for(record)
+    index = state["currentQuestion"]
+    if not 0 <= index < len(state["questions"]):
         return jsonify(success=False, error="Invalid question index"), 400
-    question = app_state["questions"][cq]
-
-    with get_ai_request_lock(session_name):
+    lock = request_locks.setdefault(name, Lock())
+    with lock:
         try:
-            if app_state["aiMode"] == "conversation":
-                ai_answer = get_conversation_ai_answer(
-                    session_name,
-                    app_state,
-                    question,
-                )
-            else:
-                ai_answer = get_independent_ai_answer(app_state, question)
-        except Exception as e:
-            return jsonify(success=False, error=str(e)), 500
+            answer = ai_answer(name, state, state["questions"][index])
+        except Exception as exception:
+            return jsonify(success=False, error=str(exception)), 500
+        state["currentAnswers"].append(answer)
+        save_state(name, state)
+        with db() as connection:
+            connection.execute("INSERT INTO answers(session_name,question_index,answer_text,source,created_at) VALUES(?,?,?,'ai',?)",
+                               (name, index, answer, now()))
+    broadcast(name)
+    return jsonify(success=True, answer=answer)
 
-        app_state["currentAnswers"].append(ai_answer)
-    socketio.emit('state_update', app_state, room=session_room(session_name))
-    return jsonify(success=True, answer=ai_answer)
+def normalized(value):
+    return " ".join(re.findall(r"\w+", value.casefold(), re.UNICODE))
 
-if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0')
+def save_game_snapshot(name, state):
+    os.makedirs(SAVEGAMES_PATH, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    destination = os.path.join(SAVEGAMES_PATH, f"{name}-{timestamp}.json")
+    temporary = destination + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as snapshot:
+        json.dump(state, snapshot, ensure_ascii=False, indent=2)
+        snapshot.write("\n")
+    os.replace(temporary, destination)
+
+@app.get("/admin/report")
+def report():
+    name, record, error = requested_session(True)
+    if error:
+        return error
+    state = state_for(record)
+    save_game_snapshot(name, state)
+    with db() as connection:
+        rows = connection.execute("SELECT question_index,answer_text,source FROM answers WHERE session_name=? ORDER BY id", (name,)).fetchall()
+        count = connection.execute("SELECT COUNT(*) FROM participants WHERE session_name=?", (name,)).fetchone()[0]
+    questions = []
+    for index, question in enumerate(state["questions"]):
+        relevant = [row for row in rows if row["question_index"] == index]
+        counts = Counter(normalized(row["answer_text"]) for row in relevant)
+        duplicates = []
+        for key, amount in counts.items():
+            if key and amount > 1:
+                duplicates.append({"answer": next(row["answer_text"] for row in relevant if normalized(row["answer_text"]) == key), "count": amount})
+        questions.append({"question": question, "answers": relevant,
+                          "aiAnswers": [row["answer_text"] for row in relevant if row["source"] == "ai"],
+                          "duplicates": duplicates})
+    duration = None
+    if record["started_at"] and record["ended_at"]:
+        duration = int((datetime.fromisoformat(record["ended_at"]) - datetime.fromisoformat(record["started_at"])).total_seconds())
+    return render_template("report.html", session_name=name, record=record, questions=questions,
+                           participant_count=count, duration_seconds=duration)
+
+clients = {}
+
+@socketio.on("connect")
+def connected(auth):
+    auth = auth or {}
+    name, role = normalize_name(auth.get("session")), auth.get("role", "participant")
+    record = record_for(name)
+    if record is None:
+        return False
+    if role == "teacher":
+        if name not in teacher_names():
+            return False
+    elif record["status"] != "live":
+        return False
+    device = str(auth.get("deviceId", ""))[:100]
+    if role == "participant":
+        if not device:
+            return False
+        timestamp = now()
+        with db() as connection:
+            connection.execute("""INSERT INTO participants VALUES(?,?,?,?)
+                ON CONFLICT(session_name,device_id) DO UPDATE SET last_seen_at=excluded.last_seen_at""",
+                               (name, device, timestamp, timestamp))
+    clients[request.sid] = {"session": name, "role": role, "device": device}
+    join_room(room(name))
+    emit("state_update", state_for(record))
+
+@socketio.on("disconnect")
+def disconnected():
+    clients.pop(request.sid, None)
+
+@socketio.on("participant_action")
+def participant_action(data):
+    client = clients.get(request.sid)
+    if not client or client["role"] != "participant":
+        return
+    name, record = client["session"], record_for(client["session"])
+    if not record or record["status"] != "live":
+        return
+    state, action = state_for(record), (data or {}).get("action")
+    changed = False
+    if action == "suggest_question" and state["gamePhase"] == "collecting":
+        value = str(data.get("question", "")).strip()[:500]
+        if value and value not in state["questions"]:
+            state["questions"].append(value)
+            changed = True
+    elif action == "update_question" and state["gamePhase"] == "collecting":
+        old, new = str(data.get("oldQuestion", "")).strip(), str(data.get("newQuestion", "")).strip()[:500]
+        if old in state["questions"] and new:
+            state["questions"][state["questions"].index(old)] = new
+            changed = True
+    elif action == "submit_answer" and state["gamePhase"] == "answering":
+        value = str(data.get("answer", "")).strip()[:2000]
+        if value:
+            state["currentAnswers"].append(value)
+            with db() as connection:
+                connection.execute("""INSERT INTO answers(session_name,question_index,answer_text,source,participant_id,created_at)
+                    VALUES(?,?,?,'participant',?,?)""",
+                                   (name, state["currentQuestion"], value, client["device"], now()))
+            changed = True
+    if changed:
+        save_state(name, state)
+        broadcast(name)
+
+if __name__ == "__main__":
+    socketio.run(app, debug=True, host="0.0.0.0")

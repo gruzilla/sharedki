@@ -166,6 +166,45 @@ body::before {
     display: none !important;
 }
 
+button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.error {
+    color: #ff6b6b;
+    margin-top: 1rem;
+}
+
+.danger {
+    background: linear-gradient(90deg, #ff6b6b, #ff9f43);
+}
+
+.report-content {
+    width: min(1000px, calc(100% - 2rem));
+    margin: 2rem auto;
+}
+
+.report-question, .report-summary {
+    margin-bottom: 1.5rem;
+}
+
+.report-question h3 {
+    margin: 1rem 0 0.5rem;
+}
+
+.report-question ul {
+    padding-left: 1.5rem;
+}
+
+@media print {
+    body { background: white; color: black; }
+    body::before, .no-print { display: none !important; }
+    .game-header, .panel { background: white; color: black; border-color: #bbb; }
+    .panel::before { display: none; }
+    .report-question { break-inside: avoid; }
+}
+
 .session-status {
     margin-top: 0.5rem;
     color: #aaa;

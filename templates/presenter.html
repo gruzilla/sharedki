@@ -114,7 +114,12 @@
     }
 
     function startSession() {
-        socket = io({auth: {session: sessionName}});
+        socket = io({auth: {session: sessionName, role: "presenter"}});
+        socket.on("connect_error", function() {
+            alert("This session does not exist or is not live yet.");
+            localStorage.removeItem("cyberquestSession");
+            window.location.reload();
+        });
         socket.on('state_update', function(updated_state) {
             app_state = updated_state;
             renderView();

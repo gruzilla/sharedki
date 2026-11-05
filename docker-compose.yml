@@ -9,11 +9,19 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}  # Load OPENAI_API_KEY from .env file
       - FLASK_SECRET=${FLASK_SECRET}  # Load FLASK_SECRET from .env file
+      - DATABASE_PATH=/data/cyberquest.db
+      - SAVEGAMES_PATH=/app/savegames
+    volumes:
+      - cyberquest_data:/data
+      - ./savegames:/app/savegames
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=revproxy"
       - "traefik.http.routers.sharedKi.rule=Host(`sharedki.abendstille.at`)"
       - "traefik.http.routers.sharedKi.tls.certresolver=myhttpchallenge"
+
+volumes:
+  cyberquest_data:
 
 networks:
   revproxy:
