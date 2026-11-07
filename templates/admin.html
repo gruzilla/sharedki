@@ -32,33 +32,33 @@
 <section class="panel data-panel"><h2>Full state</h2><textarea class="input-field" id="raw_state_input" style="height:300px"></textarea>
 <button class="futuristic-btn" id="update_raw_state_btn">Update full state</button></section></main>
 <script>
-let socket, sessionName="", app={state:{}};
+let socket, teacherSessionName="", app={state:{}};
 const el=id=>document.getElementById(id);
 async function request(path, options={}) {
-  const response=await fetch(path+(path.includes("?")?"&":"?")+"session="+encodeURIComponent(sessionName), options);
+  const response=await fetch(path+(path.includes("?")?"&":"?")+"session="+encodeURIComponent(teacherSessionName), options);
   const data=await response.json(); if(!response.ok) throw new Error(data.error||"Request failed"); return data;
 }
 async function authenticate(path){
-  sessionName=normalizeSessionName(el("session_name_input").value);
+  teacherSessionName=normalizeSessionName(el("session_name_input").value);
   try {
-    const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session:sessionName,pin:el("pin_input").value})});
+    const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session:teacherSessionName,pin:el("pin_input").value})});
     const data=await response.json(); if(!response.ok) throw new Error(data.error);
-    localStorage.setItem("cyberquestTeacherSession",sessionName); openTeacher();
+    localStorage.setItem("cyberquestTeacherSession",teacherSessionName); openTeacher();
   } catch(error){el("login_error").textContent=error.message;}
 }
 el("open_btn").onclick=()=>authenticate("/admin/login");
 el("create_btn").onclick=()=>authenticate("/admin/create_session");
 el("session_form").onsubmit=e=>{e.preventDefault();authenticate("/admin/login")};
 function render(state){
-  app.state=state; el("status").textContent=state.sessionStatus; el("join_id").textContent=sessionName;
+  app.state=state; el("status").textContent=state.sessionStatus; el("join_id").textContent=teacherSessionName;
   el("raw_state_input").value=JSON.stringify(state,null,2); el("question_index_input").value=state.currentQuestion;
   el("game_phase_select").value=state.gamePhase; el("ai_mode_select").value=state.aiMode;
   el("start_btn").disabled=state.sessionStatus==="live"; el("end_btn").disabled=state.sessionStatus!=="live";
-  el("report_btn").hidden=state.sessionStatus!=="finished"; el("report_btn").href="/admin/report?session="+encodeURIComponent(sessionName);
+  el("report_btn").hidden=state.sessionStatus!=="finished"; el("report_btn").href="/admin/report?session="+encodeURIComponent(teacherSessionName);
 }
 async function openTeacher(){
   try { const state=await request("/admin/get_state"); el("session_gate").hidden=true;el("game_screen").hidden=false;
-    el("current_session").textContent=sessionName; render(state); socket=io({auth:{session:sessionName,role:"teacher"}});socket.on("state_update",render);
+    el("current_session").textContent=teacherSessionName; render(state); socket=io({auth:{session:teacherSessionName,role:"teacher"}});socket.on("state_update",render);
   } catch(error){localStorage.removeItem("cyberquestTeacherSession");el("login_error").textContent="Enter your PIN to open this session.";}
 }
 function postState(data){return request("/admin/update_state",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)})}
@@ -71,5 +71,5 @@ el("get_ai_answer_btn").onclick=()=>request("/admin/get_ai_answer",{method:"POST
 el("start_btn").onclick=()=>confirm("Start a new live run? Previous run data will be cleared.")&&request("/admin/start",{method:"POST"}).catch(e=>alert(e.message));
 el("end_btn").onclick=()=>confirm("End the live game?")&&request("/admin/end",{method:"POST"}).then(d=>window.open(d.reportUrl,"_blank")).catch(e=>alert(e.message));
 el("change_session_btn").onclick=()=>{localStorage.removeItem("cyberquestTeacherSession");location.reload()};
-window.onload=()=>{sessionName=localStorage.getItem("cyberquestTeacherSession")||"";if(sessionName)openTeacher()};
+window.onload=()=>{teacherSessionName=localStorage.getItem("cyberquestTeacherSession")||"";if(teacherSessionName)openTeacher()};
 </script></body></html>
