@@ -18,24 +18,26 @@ body {
 body::before {
     content: "";
     position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.02),
-        rgba(255,255,255,0.02) 2px,
-        transparent 2px,
-        transparent 4px
-    );
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(45deg,
+            rgba(255, 255, 255, 0.02),
+            rgba(255, 255, 255, 0.02) 2px,
+            transparent 2px,
+            transparent 4px);
     pointer-events: none;
     z-index: -1;
 }
 
-.game-header, .game-footer {
+.game-header,
+.game-footer {
     text-align: center;
     padding: 1rem;
     background: #0f1320;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    border-top: 1px solid rgba(255,255,255,0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .game-title {
@@ -80,7 +82,10 @@ body::before {
 .panel::before {
     content: "";
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     border: 2px solid #00eaff;
     border-radius: 8px;
     opacity: 0.2;
@@ -185,7 +190,8 @@ button:disabled {
     margin: 2rem auto;
 }
 
-.report-question, .report-summary {
+.report-question,
+.report-summary {
     margin-bottom: 1.5rem;
 }
 
@@ -198,11 +204,30 @@ button:disabled {
 }
 
 @media print {
-    body { background: white; color: black; }
-    body::before, .no-print { display: none !important; }
-    .game-header, .panel { background: white; color: black; border-color: #bbb; }
-    .panel::before { display: none; }
-    .report-question { break-inside: avoid; }
+    body {
+        background: white;
+        color: black;
+    }
+
+    body::before,
+    .no-print {
+        display: none !important;
+    }
+
+    .game-header,
+    .panel {
+        background: white;
+        color: black;
+        border-color: #bbb;
+    }
+
+    .panel::before {
+        display: none;
+    }
+
+    .report-question {
+        break-inside: avoid;
+    }
 }
 
 .session-status {

@@ -2,40 +2,46 @@
 DOCKER_COMPOSE_FILE = docker-compose.yml
 DEVELOPMENT_DOCKER_COMPOSE_FILE = development-docker-compose.yml
 
+.PHONY: all dev build up down clean logs restart install-dev format lint
+
 # Default target
-.PHONY: all
 all: build up
 
 # Start a local development server with live code reloading
-.PHONY: dev
 dev:
 	docker-compose -f $(DEVELOPMENT_DOCKER_COMPOSE_FILE) up --build
 
 # Build the Docker containers
-.PHONY: build
 build:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) build
 
 # Start the Docker Compose services
-.PHONY: up
 up:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) up -d
 
 # Stop the Docker Compose services
-.PHONY: down
 down:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) down
 
 # Stop and remove all containers, networks, and volumes
-.PHONY: clean
 clean:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) down -v --rmi all
 
 # View logs from the running containers
-.PHONY: logs
 logs:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) logs -f
 
 # Restart the services (useful after code changes)
-.PHONY: restart
 restart: down up
+
+# Install frontend linting and formatting tools
+install-dev:
+	python3 -m pip install -r requirements-dev.txt
+
+# Format Jinja/HTML, JavaScript, and CSS
+format:
+	python3 tools/frontend_quality.py
+
+# Check frontend formatting and lint Jinja/HTML
+lint:
+	python3 tools/frontend_quality.py --check

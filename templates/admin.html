@@ -1,75 +1,201 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CyberQuest Teacher</title>
-<script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-<script src="{{ url_for('static', filename='session.js') }}"></script></head>
-<body><header class="game-header"><h1 class="game-title">CyberQuest Teacher</h1>
-<div class="session-status">Session: <strong id="current_session">not connected</strong>
-<button class="futuristic-btn" id="change_session_btn">Log out</button></div></header>
-<section class="panel session-gate" id="session_gate"><h2>Teacher session</h2>
-<p>Create a protected game or open one you prepared earlier.</p>
-<form id="session_form"><input class="input-field" id="session_name_input" placeholder="Session ID" required>
-<input class="input-field" id="pin_input" type="password" minlength="6" placeholder="Private teacher PIN" required>
-<button class="futuristic-btn" type="button" id="open_btn">Open</button>
-<button class="futuristic-btn" type="button" id="create_btn">Create new</button>
-<p id="login_error" class="error"></p></form></section>
-<main class="game-container" id="game_screen" hidden>
-<section class="panel"><h2>Live session</h2><p>Status: <strong id="status">prepared</strong></p>
-<p>Students join with session ID <strong id="join_id"></strong>.</p>
-<button class="futuristic-btn" id="start_btn">Start live game</button>
-<button class="futuristic-btn danger" id="end_btn">End and create report</button>
-<a class="futuristic-btn" id="report_btn" target="_blank" hidden>Open report</a></section>
-<section class="panel"><h2>Controls</h2>
-<label>Question index</label><input class="input-field" type="number" id="question_index_input">
-<button class="futuristic-btn" id="update_question_index_btn">Update</button>
-<label>Game phase</label><select class="input-field" id="game_phase_select"><option value="collecting">Collecting</option><option value="answering">Answering</option></select>
-<button class="futuristic-btn" id="update_game_phase_btn">Update phase</button>
-<label>AI mode</label><select class="input-field" id="ai_mode_select"><option value="conversation">Conversation</option><option value="independend">Independent</option></select>
-<button class="futuristic-btn" id="update_ai_mode_btn">Update AI mode</button></section>
-<section class="panel"><h2>Answers</h2><button class="futuristic-btn" id="get_ai_answer_btn">Get AI answer</button>
-<p id="ai_answer_display"></p><button class="futuristic-btn danger" id="clear_all_answers_btn">Clear current answers</button></section>
-<section class="panel data-panel"><h2>Full state</h2><textarea class="input-field" id="raw_state_input" style="height:300px"></textarea>
-<button class="futuristic-btn" id="update_raw_state_btn">Update full state</button></section></main>
-<script>
-let socket, teacherSessionName="", app={state:{}};
-const el=id=>document.getElementById(id);
-async function request(path, options={}) {
-  const response=await fetch(path+(path.includes("?")?"&":"?")+"session="+encodeURIComponent(teacherSessionName), options);
-  const data=await response.json(); if(!response.ok) throw new Error(data.error||"Request failed"); return data;
-}
-async function authenticate(path){
-  teacherSessionName=normalizeSessionName(el("session_name_input").value);
-  try {
-    const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session:teacherSessionName,pin:el("pin_input").value})});
-    const data=await response.json(); if(!response.ok) throw new Error(data.error);
-    localStorage.setItem("cyberquestTeacherSession",teacherSessionName); openTeacher();
-  } catch(error){el("login_error").textContent=error.message;}
-}
-el("open_btn").onclick=()=>authenticate("/admin/login");
-el("create_btn").onclick=()=>authenticate("/admin/create_session");
-el("session_form").onsubmit=e=>{e.preventDefault();authenticate("/admin/login")};
-function render(state){
-  app.state=state; el("status").textContent=state.sessionStatus; el("join_id").textContent=teacherSessionName;
-  el("raw_state_input").value=JSON.stringify(state,null,2); el("question_index_input").value=state.currentQuestion;
-  el("game_phase_select").value=state.gamePhase; el("ai_mode_select").value=state.aiMode;
-  el("start_btn").disabled=state.sessionStatus==="live"; el("end_btn").disabled=state.sessionStatus!=="live";
-  el("report_btn").hidden=state.sessionStatus!=="finished"; el("report_btn").href="/admin/report?session="+encodeURIComponent(teacherSessionName);
-}
-async function openTeacher(){
-  try { const state=await request("/admin/get_state"); el("session_gate").hidden=true;el("game_screen").hidden=false;
-    el("current_session").textContent=teacherSessionName; render(state); socket=io({auth:{session:teacherSessionName,role:"teacher"}});socket.on("state_update",render);
-  } catch(error){localStorage.removeItem("cyberquestTeacherSession");el("login_error").textContent="Enter your PIN to open this session.";}
-}
-function postState(data){return request("/admin/update_state",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)})}
-el("update_question_index_btn").onclick=()=>postState({currentQuestion:Number(el("question_index_input").value)});
-el("update_game_phase_btn").onclick=()=>postState({gamePhase:el("game_phase_select").value});
-el("update_ai_mode_btn").onclick=()=>postState({aiMode:el("ai_mode_select").value});
-el("update_raw_state_btn").onclick=()=>{try{postState(JSON.parse(el("raw_state_input").value))}catch(e){alert("Invalid JSON")}};
-el("clear_all_answers_btn").onclick=()=>request("/admin/clear_answers",{method:"POST"}).catch(e=>alert(e.message));
-el("get_ai_answer_btn").onclick=()=>request("/admin/get_ai_answer",{method:"POST"}).then(d=>el("ai_answer_display").textContent=d.answer).catch(e=>alert(e.message));
-el("start_btn").onclick=()=>confirm("Start a new live run? Previous run data will be cleared.")&&request("/admin/start",{method:"POST"}).catch(e=>alert(e.message));
-el("end_btn").onclick=()=>confirm("End the live game?")&&request("/admin/end",{method:"POST"}).then(d=>window.open(d.reportUrl,"_blank")).catch(e=>alert(e.message));
-el("change_session_btn").onclick=()=>{localStorage.removeItem("cyberquestTeacherSession");location.reload()};
-window.onload=()=>{teacherSessionName=localStorage.getItem("cyberquestTeacherSession")||"";if(teacherSessionName)openTeacher()};
-</script></body></html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>CyberQuest Teacher</title>
+        <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+        <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+        <script src="{{ url_for('static', filename='session.js') }}"></script>
+    </head>
+    <body>
+        <header class="game-header">
+            <h1 class="game-title">CyberQuest Teacher</h1>
+            <div class="session-status">
+                Session: <strong id="current_session">not connected</strong>
+                <button class="futuristic-btn" id="change_session_btn">Log out</button>
+            </div>
+        </header>
+        <section class="panel session-gate" id="session_gate">
+            <h2>Teacher session</h2>
+            <p>Create a protected game or open one you prepared earlier.</p>
+            <form id="session_form">
+                <input class="input-field"
+                       id="session_name_input"
+                       placeholder="Session ID"
+                       required>
+                <input class="input-field"
+                       id="pin_input"
+                       type="password"
+                       minlength="6"
+                       placeholder="Private teacher PIN"
+                       required>
+                <button class="futuristic-btn" type="button" id="open_btn">Open</button>
+                <button class="futuristic-btn" type="button" id="create_btn">Create new</button>
+                <p id="login_error" class="error"></p>
+            </form>
+        </section>
+        <main class="game-container" id="game_screen" hidden>
+            <section class="panel">
+                <h2>Live session</h2>
+                <p>
+                    Status: <strong id="status">prepared</strong>
+                </p>
+                <p>
+                    Students join with session ID <strong id="join_id"></strong>.
+                </p>
+                <button class="futuristic-btn" id="start_btn">Start live game</button>
+                <button class="futuristic-btn danger" id="end_btn">End and create report</button>
+                <a class="futuristic-btn" id="report_btn" target="_blank" hidden>Open report</a>
+            </section>
+            <section class="panel">
+                <h2>Controls</h2>
+                <label>Question index</label>
+                <input class="input-field" type="number" id="question_index_input">
+                <button class="futuristic-btn" id="update_question_index_btn">Update</button>
+                <label>Game phase</label>
+                <select class="input-field" id="game_phase_select">
+                    <option value="collecting">Collecting</option>
+                    <option value="answering">Answering</option>
+                </select>
+                <button class="futuristic-btn" id="update_game_phase_btn">Update phase</button>
+                <label>AI mode</label>
+                <select class="input-field" id="ai_mode_select">
+                    <option value="conversation">Conversation</option>
+                    <option value="independend">Independent</option>
+                </select>
+                <button class="futuristic-btn" id="update_ai_mode_btn">Update AI mode</button>
+            </section>
+            <section class="panel">
+                <h2>Answers</h2>
+                <button class="futuristic-btn" id="get_ai_answer_btn">Get AI answer</button>
+                <p id="ai_answer_display"></p>
+                <button class="futuristic-btn danger" id="clear_all_answers_btn">Clear current answers</button>
+            </section>
+            <section class="panel data-panel">
+                <h2>Full state</h2>
+                <textarea class="input-field" id="raw_state_input" style="height:300px"></textarea>
+                <button class="futuristic-btn" id="update_raw_state_btn">Update full state</button>
+            </section>
+        </main>
+        <script>
+            let socket, teacherSessionName = "",
+                app = {
+                    state: {}
+                };
+            const el = id => document.getElementById(id);
+            async function request(path, options = {}) {
+                const response = await fetch(path + (path.includes("?") ? "&" : "?") + "session=" + encodeURIComponent(teacherSessionName), options);
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || "Request failed");
+                return data;
+            }
+            async function authenticate(path) {
+                teacherSessionName = normalizeSessionName(el("session_name_input").value);
+                try {
+                    const response = await fetch(path, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            session: teacherSessionName,
+                            pin: el("pin_input").value
+                        })
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error);
+                    localStorage.setItem("cyberquestTeacherSession", teacherSessionName);
+                    openTeacher();
+                } catch (error) {
+                    el("login_error").textContent = error.message;
+                }
+            }
+            el("open_btn").onclick = () => authenticate("/admin/login");
+            el("create_btn").onclick = () => authenticate("/admin/create_session");
+            el("session_form").onsubmit = e => {
+                e.preventDefault();
+                authenticate("/admin/login")
+            };
+
+            function render(state) {
+                app.state = state;
+                el("status").textContent = state.sessionStatus;
+                el("join_id").textContent = teacherSessionName;
+                el("raw_state_input").value = JSON.stringify(state, null, 2);
+                el("question_index_input").value = state.currentQuestion;
+                el("game_phase_select").value = state.gamePhase;
+                el("ai_mode_select").value = state.aiMode;
+                el("start_btn").disabled = state.sessionStatus === "live";
+                el("end_btn").disabled = state.sessionStatus !== "live";
+                el("report_btn").hidden = state.sessionStatus !== "finished";
+                el("report_btn").href = "/admin/report?session=" + encodeURIComponent(teacherSessionName);
+            }
+            async function openTeacher() {
+                try {
+                    const state = await request("/admin/get_state");
+                    el("session_gate").hidden = true;
+                    el("game_screen").hidden = false;
+                    el("current_session").textContent = teacherSessionName;
+                    render(state);
+                    socket = io({
+                        auth: {
+                            session: teacherSessionName,
+                            role: "teacher"
+                        }
+                    });
+                    socket.on("state_update", render);
+                } catch (error) {
+                    localStorage.removeItem("cyberquestTeacherSession");
+                    el("login_error").textContent = "Enter your PIN to open this session.";
+                }
+            }
+
+            function postState(data) {
+                return request("/admin/update_state", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(data)
+                })
+            }
+            el("update_question_index_btn").onclick = () => postState({
+                currentQuestion: Number(el("question_index_input").value)
+            });
+            el("update_game_phase_btn").onclick = () => postState({
+                gamePhase: el("game_phase_select").value
+            });
+            el("update_ai_mode_btn").onclick = () => postState({
+                aiMode: el("ai_mode_select").value
+            });
+            el("update_raw_state_btn").onclick = () => {
+                try {
+                    postState(JSON.parse(el("raw_state_input").value))
+                } catch (e) {
+                    alert("Invalid JSON")
+                }
+            };
+            el("clear_all_answers_btn").onclick = () => request("/admin/clear_answers", {
+                method: "POST"
+            }).catch(e => alert(e.message));
+            el("get_ai_answer_btn").onclick = () => request("/admin/get_ai_answer", {
+                method: "POST"
+            }).then(d => el("ai_answer_display").textContent = d.answer).catch(e => alert(e.message));
+            el("start_btn").onclick = () => confirm("Start a new live run? Previous run data will be cleared.") && request("/admin/start", {
+                method: "POST"
+            }).catch(e => alert(e.message));
+            el("end_btn").onclick = () => confirm("End the live game?") && request("/admin/end", {
+                method: "POST"
+            }).then(d => window.open(d.reportUrl, "_blank")).catch(e => alert(e.message));
+            el("change_session_btn").onclick = () => {
+                localStorage.removeItem("cyberquestTeacherSession");
+                location.reload()
+            };
+            window.onload = () => {
+                teacherSessionName = localStorage.getItem("cyberquestTeacherSession") || "";
+                if (teacherSessionName) openTeacher()
+            };
+        </script>
+    </body>
+</html>

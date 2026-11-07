@@ -1,1 +1,30 @@
-<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CyberQuest</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body><header class="game-header"><h1 class="game-title">CyberQuest</h1></header><main class="game-container"><section class="panel"><h2>Teacher</h2><p>Prepare, run, and review a game.</p><a class="futuristic-btn" href="/admin">Teacher area</a></section><section class="panel"><h2>Students</h2><p>Join a live game.</p><a class="futuristic-btn" href="/participant">Join game</a></section><section class="panel"><h2>Presentation</h2><a class="futuristic-btn" href="/presenter">Open screen</a></section></main></body></html>
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>CyberQuest</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    </head>
+    <body>
+        <header class="game-header">
+            <h1 class="game-title">CyberQuest</h1>
+        </header>
+        <main class="game-container">
+            <section class="panel">
+                <h2>Teacher</h2>
+                <p>Prepare, run, and review a game.</p>
+                <a class="futuristic-btn" href="{{ url_for('admin') }}">Teacher area</a>
+            </section>
+            <section class="panel">
+                <h2>Students</h2>
+                <p>Join a live game.</p>
+                <a class="futuristic-btn" href="{{ url_for('participant') }}">Join game</a>
+            </section>
+            <section class="panel">
+                <h2>Presentation</h2>
+                <a class="futuristic-btn" href="{{ url_for('presenter') }}">Open screen</a>
+            </section>
+        </main>
+    </body>
+</html>
