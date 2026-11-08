@@ -12,7 +12,7 @@
         <header class="game-header">
             <h1 class="game-title">CyberQuest Teacher</h1>
             <div class="session-status">
-                Session: <strong id="current_session">not connected</strong>
+                Session: <strong class="session-id" id="current_session">not connected</strong>
                 <button class="futuristic-btn" id="change_session_btn">Log out</button>
             </div>
         </header>
@@ -36,41 +36,90 @@
             </form>
         </section>
         <main class="game-container" id="game_screen" hidden>
-            <section class="panel">
+            <section class="panel live-session-panel">
                 <h2>Live session</h2>
-                <p>
-                    Status: <strong id="status">prepared</strong>
-                </p>
-                <p>
-                    Students join with session ID <strong id="join_id"></strong>.
-                </p>
-                <button class="futuristic-btn" id="start_btn">Start live game</button>
-                <button class="futuristic-btn danger" id="end_btn">End and create report</button>
-                <a class="futuristic-btn" id="report_btn" target="_blank" hidden>Open report</a>
+                <div class="live-session-summary">
+                    <div>
+                        <h3>Join session</h3>
+                        <p>
+                            Students join with session ID <strong class="session-id" id="join_id"></strong>.
+                        </p>
+                        <h3>Status</h3>
+                        <div class="session-state-line" aria-label="Session status">
+                            <span class="session-state" id="session_state_prepared">Prepared</span>
+                            <span class="session-state" id="session_state_live">Live</span>
+                            <span class="session-state" id="session_state_finished">Finished</span>
+                        </div>
+                        <h3>AI token usage</h3>
+                        <p class="token-usage">
+                            Last AI answer: <strong id="last_ai_answer_tokens">0</strong><br>
+                            Total this game: <strong id="total_ai_answer_tokens">0</strong>
+                        </p>
+                    </div>
+                    <div>
+                        <h3>Connected devices</h3>
+                        <ul class="connected-device-list" id="connected_device_list"></ul>
+                    </div>
+                </div>
+                <h3>Current question</h3>
+                <p class="current-question-highlight" id="current_question_text"></p>
+                <h3>Answers</h3>
+                <ul class="answers-list" id="current_answer_list"></ul>
             </section>
             <section class="panel">
                 <h2>Controls</h2>
-                <label>Question index</label>
-                <input class="input-field" type="number" id="question_index_input">
-                <button class="futuristic-btn" id="update_question_index_btn">Update</button>
-                <label>Game phase</label>
-                <select class="input-field" id="game_phase_select">
-                    <option value="collecting">Collecting</option>
-                    <option value="answering">Answering</option>
-                </select>
-                <button class="futuristic-btn" id="update_game_phase_btn">Update phase</button>
-                <label>AI mode</label>
-                <select class="input-field" id="ai_mode_select">
-                    <option value="conversation">Conversation</option>
-                    <option value="independend">Independent</option>
-                </select>
-                <button class="futuristic-btn" id="update_ai_mode_btn">Update AI mode</button>
-            </section>
-            <section class="panel">
-                <h2>Answers</h2>
-                <button class="futuristic-btn" id="get_ai_answer_btn">Get AI answer</button>
-                <p id="ai_answer_display"></p>
-                <button class="futuristic-btn danger" id="clear_all_answers_btn">Clear current answers</button>
+                <label for="question_select">Question</label>
+                <div class="question-control">
+                    <select class="input-field" id="question_select" size="6"></select>
+                    <button class="futuristic-btn" id="update_question_btn">Show selected question on client screens</button>
+                </div>
+                <div class="mode-controls">
+                    <div class="mode-control">
+                        <label>Live game</label>
+                        <div class="state-choice-group" role="group" aria-label="Live game status">
+                            <button class="futuristic-btn state-choice"
+                                    id="start_btn"
+                                    type="button">Start game</button>
+                            <button class="futuristic-btn state-choice"
+                                    id="end_btn"
+                                    type="button">Stop game</button>
+                        </div>
+                    </div>
+                    <div class="mode-control">
+                        <label>Participant interaction</label>
+                        <div class="state-choice-group" role="group" aria-label="Participant interaction">
+                            <button class="futuristic-btn state-choice"
+                                    id="game_phase_collecting_btn"
+                                    type="button">Suggest questions</button>
+                            <button class="futuristic-btn state-choice"
+                                    id="game_phase_answering_btn"
+                                    type="button">Answer questions</button>
+                        </div>
+                    </div>
+                    <div class="mode-control">
+                        <label>AI mode</label>
+                        <div class="state-choice-group" role="group" aria-label="AI mode">
+                            <button class="futuristic-btn state-choice"
+                                    id="ai_mode_conversation_btn"
+                                    type="button">Conversation</button>
+                            <button class="futuristic-btn state-choice"
+                                    id="ai_mode_independent_btn"
+                                    type="button">Independent</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="action-controls">
+                    <div class="action-control">
+                        <label for="get_ai_answer_btn">AI answer</label>
+                        <button class="futuristic-btn" id="get_ai_answer_btn" type="button">Generate AI answer</button>
+                    </div>
+                    <form class="action-control" action="/admin/report" method="get" target="_blank">
+                        <label for="report_btn">Generate report</label>
+                        <input id="report_session" name="session" type="hidden">
+                        <button class="futuristic-btn" id="report_btn" type="submit">Generate report</button>
+                        <small class="action-hint">opens in a new window</small>
+                    </form>
+                </div>
             </section>
             <section class="panel data-panel">
                 <h2>Full state</h2>
@@ -120,16 +169,154 @@
 
             function render(state) {
                 app.state = state;
-                el("status").textContent = state.sessionStatus;
                 el("join_id").textContent = teacherSessionName;
+
+                const sessionStates = ["prepared", "live", "finished"];
+                const transitionDescriptions = {
+                    prepared: {
+                        prepared: "This session is prepared and ready to start.",
+                        live: "A prepared session cannot return to this state after it starts.",
+                        finished: "Create a new session to return to the prepared state."
+                    },
+                    live: {
+                        prepared: "Click Start live game to enter the live state.",
+                        live: "This game is currently live.",
+                        finished: "Click Start live game to begin a new live run."
+                    },
+                    finished: {
+                        prepared: "Start the live game, then stop it to finish the session.",
+                        live: "Click Stop live game and confirm to finish the session.",
+                        finished: "This game session has finished."
+                    }
+                };
+                sessionStates.forEach(sessionStatus => {
+                    const marker = el(`session_state_${sessionStatus}`);
+                    const isActive = state.sessionStatus === sessionStatus;
+                    marker.classList.toggle("is-active", isActive);
+                    marker.setAttribute("aria-current", isActive ? "step" : "false");
+                    marker.title = transitionDescriptions[sessionStatus][state.sessionStatus];
+                });
                 el("raw_state_input").value = JSON.stringify(state, null, 2);
-                el("question_index_input").value = state.currentQuestion;
-                el("game_phase_select").value = state.gamePhase;
-                el("ai_mode_select").value = state.aiMode;
-                el("start_btn").disabled = state.sessionStatus === "live";
-                el("end_btn").disabled = state.sessionStatus !== "live";
-                el("report_btn").hidden = state.sessionStatus !== "finished";
-                el("report_btn").href = "/admin/report?session=" + encodeURIComponent(teacherSessionName);
+                el("last_ai_answer_tokens").textContent =
+                    Number(state.lastAiAnswerTokens || 0).toLocaleString();
+                el("total_ai_answer_tokens").textContent =
+                    Number(state.totalAiAnswerTokens || 0).toLocaleString();
+
+                const deviceList = el("connected_device_list");
+                deviceList.replaceChildren();
+                if (state.connectedDevices.length === 0) {
+                    const emptyItem = document.createElement("li");
+                    emptyItem.textContent = "No devices connected.";
+                    deviceList.append(emptyItem);
+                } else {
+                    state.connectedDevices.forEach(device => {
+                        const item = document.createElement("li");
+                        item.textContent = `${device.id} (${device.code})`;
+                        deviceList.append(item);
+                    });
+                }
+
+                const currentQuestion = state.questions[state.currentQuestion];
+                el("current_question_text").textContent = currentQuestion || "No question selected.";
+
+                const groupedAnswers = new Map();
+                state.currentAnswerDetails.forEach(detail => {
+                    const text = String(detail.answer);
+                    const key = (text.toLocaleLowerCase().match(/[\p{L}\p{N}_]+/gu) || []).join(" ");
+                    const deviceCode = detail.deviceCode || "unknown";
+                    const existing = groupedAnswers.get(key);
+                    if (existing) {
+                        existing.count += 1;
+                        existing.deviceCounts.set(
+                            deviceCode,
+                            (existing.deviceCounts.get(deviceCode) || 0) + 1
+                        );
+                    } else {
+                        groupedAnswers.set(key, {
+                            text,
+                            count: 1,
+                            deviceCounts: new Map([[deviceCode, 1]])
+                        });
+                    }
+                });
+
+                const answerList = el("current_answer_list");
+                answerList.replaceChildren();
+                if (groupedAnswers.size === 0) {
+                    const emptyItem = document.createElement("li");
+                    emptyItem.textContent = "No answers yet.";
+                    answerList.append(emptyItem);
+                } else {
+                    groupedAnswers.forEach(answer => {
+                        const item = document.createElement("li");
+                        item.className = "answer-row";
+
+                        const answerContent = document.createElement("span");
+                        answerContent.className = "answer-content";
+
+                        const text = document.createElement("span");
+                        text.textContent = answer.count > 1 ? `${answer.text} (×${answer.count})` : answer.text;
+                        answerContent.append(text);
+
+                        answer.deviceCounts.forEach((_count, code) => {
+                            const tag = document.createElement("span");
+                            tag.className = "device-code-tag";
+                            tag.textContent = `(${code})`;
+                            answerContent.append(tag);
+                        });
+
+                        const deleteButton = document.createElement("button");
+                        deleteButton.className = "answer-delete-btn";
+                        deleteButton.type = "button";
+                        const deleteIcon = document.createElement("img");
+                        deleteIcon.src = "{{ url_for('static', filename='trash.svg') }}";
+                        deleteIcon.alt = "";
+                        deleteIcon.setAttribute("aria-hidden", "true");
+                        deleteButton.appendChild(deleteIcon);
+                        deleteButton.title = "Remove this answer from all clients";
+                        deleteButton.setAttribute("aria-label", `Remove answer: ${answer.text}`);
+                        deleteButton.onclick = () => request("/admin/delete_answer", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                answer: answer.text
+                            })
+                        }).catch(error => alert(error.message));
+
+                        item.append(answerContent, deleteButton);
+                        answerList.append(item);
+                    });
+                }
+
+                const questionSelect = el("question_select");
+                questionSelect.replaceChildren();
+                state.questions.forEach((question, index) => {
+                    const option = document.createElement("option");
+                    option.value = String(index);
+                    option.textContent = `${index + 1}. ${String(question)}`;
+                    option.classList.toggle("current-question", index === state.currentQuestion);
+                    questionSelect.append(option);
+                });
+                questionSelect.value = String(state.currentQuestion);
+
+                const setActiveChoice = (id, isActive) => {
+                    const button = el(id);
+                    button.classList.toggle("is-active", isActive);
+                    button.setAttribute("aria-pressed", String(isActive));
+                };
+                setActiveChoice("game_phase_collecting_btn", state.gamePhase === "collecting");
+                setActiveChoice("game_phase_answering_btn", state.gamePhase === "answering");
+                setActiveChoice("ai_mode_conversation_btn", state.aiMode === "conversation");
+                setActiveChoice("ai_mode_independent_btn", state.aiMode === "independend");
+
+                const isLive = state.sessionStatus === "live";
+                setActiveChoice("start_btn", !isLive);
+                setActiveChoice("end_btn", isLive);
+                el("start_btn").disabled = isLive;
+                el("end_btn").disabled = !isLive;
+                el("report_session").value = teacherSessionName;
             }
             async function openTeacher() {
                 try {
@@ -160,14 +347,20 @@
                     body: JSON.stringify(data)
                 })
             }
-            el("update_question_index_btn").onclick = () => postState({
-                currentQuestion: Number(el("question_index_input").value)
+            el("update_question_btn").onclick = () => postState({
+                currentQuestion: Number(el("question_select").value)
             });
-            el("update_game_phase_btn").onclick = () => postState({
-                gamePhase: el("game_phase_select").value
+            el("game_phase_collecting_btn").onclick = () => postState({
+                gamePhase: "collecting"
             });
-            el("update_ai_mode_btn").onclick = () => postState({
-                aiMode: el("ai_mode_select").value
+            el("game_phase_answering_btn").onclick = () => postState({
+                gamePhase: "answering"
+            });
+            el("ai_mode_conversation_btn").onclick = () => postState({
+                aiMode: "conversation"
+            });
+            el("ai_mode_independent_btn").onclick = () => postState({
+                aiMode: "independend"
             });
             el("update_raw_state_btn").onclick = () => {
                 try {
@@ -176,22 +369,21 @@
                     alert("Invalid JSON")
                 }
             };
-            el("clear_all_answers_btn").onclick = () => request("/admin/clear_answers", {
-                method: "POST"
-            }).catch(e => alert(e.message));
             el("get_ai_answer_btn").onclick = () => request("/admin/get_ai_answer", {
                 method: "POST"
-            }).then(d => el("ai_answer_display").textContent = d.answer).catch(e => alert(e.message));
+            }).catch(e => alert(e.message));
             el("start_btn").onclick = () => confirm("Start a new live run? Previous run data will be cleared.") && request("/admin/start", {
                 method: "POST"
             }).catch(e => alert(e.message));
-            el("end_btn").onclick = () => confirm("End the live game?") && request("/admin/end", {
+            el("end_btn").onclick = () => confirm("Do you really want to stop the live game? Students will no longer be able to participate.") && request("/admin/end", {
                 method: "POST"
-            }).then(d => window.open(d.reportUrl, "_blank")).catch(e => alert(e.message));
-            el("change_session_btn").onclick = () => {
+            }).catch(e => alert(e.message));
+            el("change_session_btn").onclick = () => request("/admin/logout", {
+                method: "POST"
+            }).then(() => {
                 localStorage.removeItem("cyberquestTeacherSession");
-                location.reload()
-            };
+                location.reload();
+            }).catch(error => alert(error.message));
             window.onload = () => {
                 teacherSessionName = localStorage.getItem("cyberquestTeacherSession") || "";
                 if (teacherSessionName) openTeacher()

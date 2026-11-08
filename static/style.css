@@ -69,6 +69,10 @@ body::before {
     }
 }
 
+.data-panel {
+    grid-column: 1 / -1;
+}
+
 .panel {
     background: #101521;
     padding: 2rem;
@@ -99,6 +103,14 @@ body::before {
     text-shadow: 0 0 4px #00eaff;
 }
 
+.panel label {
+    display: block;
+    margin: 1rem 0 0.75rem;
+    font-size: 1.17rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
 .question-text {
     font-size: 1rem;
     margin-bottom: 1rem;
@@ -121,6 +133,65 @@ body::before {
 
 .answers-list li:hover {
     background: #00eaff33;
+}
+
+.answers-list .answer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.answer-content {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+}
+
+.device-code-tag {
+    padding: 0.1rem 0.4rem;
+    border: 1px solid #00eaff88;
+    border-radius: 999px;
+    color: #00eaff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.presenter-answer-count {
+    display: inline-block;
+    margin-left: 0.65rem;
+    padding: 0.15rem 0.5rem;
+    border: 1px solid #ffcc00;
+    border-radius: 999px;
+    background: #ffcc0022;
+    color: #ffdf66;
+    box-shadow: 0 0 8px #ffcc0066;
+    font-size: 1.05em;
+    white-space: nowrap;
+}
+
+.answer-delete-btn {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.55rem;
+    border: 1px solid #ff4d6d;
+    border-radius: 4px;
+    background: transparent;
+    color: #ff4d6d;
+    cursor: pointer;
+    line-height: 0;
+}
+
+.answer-delete-btn img {
+    display: block;
+    width: 1rem;
+    height: 1rem;
+}
+
+.answer-delete-btn:hover {
+    background: #ff4d6d22;
+    box-shadow: 0 0 8px #ff4d6d88;
 }
 
 .input-field {
@@ -154,11 +225,172 @@ body::before {
     letter-spacing: 1px;
     cursor: pointer;
     transition: transform 0.3s, box-shadow 0.3s;
+    text-decoration: none;
 }
 
 .futuristic-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 0 10px #00eaff, 0 0 20px #00eaff;
+}
+
+.session-id {
+    display: inline-block;
+    padding: 0.25rem 0.6rem;
+    color: #000;
+    font-size: 1.15rem;
+    letter-spacing: 0.08em;
+    background: #00eaff;
+    border-radius: 3px;
+    box-shadow: 0 0 10px #00eaff88;
+}
+
+.live-session-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+}
+
+.live-session-panel h3 {
+    display: block;
+    margin: 1rem 0 0.75rem;
+    font-size: 1.17rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.token-usage {
+    margin: 0;
+    line-height: 1.6;
+}
+
+.connected-device-list {
+    margin: 0;
+    padding-left: 1.25rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.current-question-highlight {
+    padding: 1rem;
+    border: 1px solid #00eaff;
+    border-radius: 4px;
+    background: #00eaff12;
+    box-shadow: inset 0 0 12px #00eaff22;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.session-state-line {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin: 0;
+    overflow-x: auto;
+}
+
+.session-state {
+    flex: 0 0 auto;
+    padding: 0.25rem 0;
+    color: #8b91a7;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: default;
+    border-bottom: 2px solid transparent;
+}
+
+.session-state:not(:last-child)::after {
+    margin-left: 1rem;
+    color: #596078;
+    content: "→";
+}
+
+.session-state.is-active {
+    color: #00eaff;
+    font-weight: 700;
+    text-shadow: 0 0 6px #00eaff88;
+    border-bottom-color: #00eaff;
+}
+
+.question-control {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 1rem;
+}
+
+.question-control .input-field {
+    margin-bottom: 0;
+    line-height: 1.5;
+}
+
+.question-control option {
+    padding: 0.45rem 0.5rem;
+}
+
+.question-control option.current-question {
+    background: #00eaff;
+    color: #000;
+    font-weight: 700;
+}
+
+.mode-controls {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+}
+
+.mode-control .state-choice-group {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.action-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+}
+
+.action-control {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.action-hint {
+    margin-top: 0.5rem;
+    text-align: center;
+}
+
+.state-choice-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+@media (max-width: 500px) {
+    .live-session-summary,
+    .question-control,
+    .mode-controls,
+    .action-controls {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+
+    .question-control .input-field {
+        margin-bottom: 1rem;
+    }
+}
+
+.state-choice {
+    background: #1a1e2f;
+    color: #d1d1d1;
+    border: 1px solid #00eaff66;
+}
+
+.state-choice.is-active {
+    background: linear-gradient(90deg, #00eaff, #00ffa3);
+    color: #000;
+    box-shadow: 0 0 10px #00eaff88;
 }
 
 /* Make it look more "Tron"-like on hover */

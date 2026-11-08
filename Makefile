@@ -2,7 +2,7 @@
 DOCKER_COMPOSE_FILE = docker-compose.yml
 DEVELOPMENT_DOCKER_COMPOSE_FILE = development-docker-compose.yml
 
-.PHONY: all dev build up down clean logs restart install-dev format lint
+.PHONY: all dev build up down clean logs restart inspect change-pin install-dev format lint
 
 # Default target
 all: build up
@@ -33,6 +33,15 @@ logs:
 
 # Restart the services (useful after code changes)
 restart: down up
+
+# Open the development SQLite database in an interactive shell
+inspect:
+	docker run --rm -it -v shared-ki_cyberquest_dev_data:/data alpine sh -c 'apk add --no-cache sqlite >/dev/null && sqlite3 /data/cyberquest.db'
+
+# Change a game session's teacher PIN (usage: make change-pin SESSION=my-game)
+change-pin:
+	@test -n "$(SESSION)" || (echo "Usage: make change-pin SESSION=<session-id>" >&2; exit 2)
+	@docker compose -f $(DEVELOPMENT_DOCKER_COMPOSE_FILE) run --rm -e PIN_SESSION="$(SESSION)" sharedki_flask_app python -c 'exec("""import getpass\nimport os\nimport sqlite3\nfrom werkzeug.security import generate_password_hash\n\nsession_name = os.environ[\"PIN_SESSION\"]\npin = getpass.getpass(\"New teacher PIN: \" )\nconfirmation = getpass.getpass(\"Confirm teacher PIN: \" )\nif len(pin) < 6:\n    raise SystemExit(\"Teacher PIN must contain at least 6 characters\")\nif pin != confirmation:\n    raise SystemExit(\"PINs do not match\")\nwith sqlite3.connect(os.environ.get(\"DATABASE_PATH\", \"/data/cyberquest.db\")) as connection:\n    cursor = connection.execute(\"UPDATE game_sessions SET pin_hash = ? WHERE session_name = ?\", (generate_password_hash(pin), session_name))\n    if cursor.rowcount != 1:\n        raise SystemExit(f\"Session not found: {session_name}\")\nprint(f\"Teacher PIN changed for session: {session_name}\")\n""")'
 
 # Install frontend linting and formatting tools
 install-dev:

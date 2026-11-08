@@ -16,7 +16,7 @@
         <header class="game-header">
             <h1 class="game-title">CyberQuest Presenter</h1>
             <div class="session-status">
-                Session: <strong id="current_session">not connected</strong>
+                Session: <strong class="session-id" id="current_session">not connected</strong>
                 <button class="futuristic-btn" id="change_session_btn" type="button">Change</button>
             </div>
         </header>
@@ -44,7 +44,7 @@
             <!-- Interaction Panel: Could be used for future features, admin controls, or presenter-only tools -->
             <section class="panel interaction-panel" id="interaction_panel">
                 <!-- Currently can remain empty or show a placeholder -->
-                <h2 id="interaction_heading">Info</h2>
+                <h2 id="interaction_heading">Aufgabe</h2>
                 <p id="interaction_content">No actions available yet.</p>
             </section>
         </main>
@@ -61,6 +61,15 @@
                 const interactionHeading = document.getElementById("interaction_heading");
                 const interactionContent = document.getElementById("interaction_content");
                 infoContent.innerHTML = ""; // clear old content
+                interactionContent.innerHTML = "";
+
+                if (app_state.sessionStatus === "finished") {
+                    infoHeading.textContent = "Game over";
+                    infoContent.textContent = "The teacher has ended this game session.";
+                    interactionHeading.textContent = "Session ended";
+                    interactionContent.textContent = "Thank you for participating.";
+                    return;
+                }
 
                 if (app_state.gamePhase === "collecting") {
                     // Show welcome and collected questions
@@ -97,13 +106,33 @@
 
                     let answersList = document.createElement('ul');
                     answersList.classList.add("answers-list");
+                    const groupedAnswers = new Map();
                     if (Array.isArray(app_state.currentAnswers)) {
-                        app_state.currentAnswers.forEach(a => {
-                            let li = document.createElement('li');
-                            li.textContent = a;
-                            answersList.appendChild(li);
+                        app_state.currentAnswers.forEach(answer => {
+                            const text = String(answer);
+                            const key = (text.toLocaleLowerCase().match(/[\p{L}\p{N}_]+/gu) || []).join(" ");
+                            const existing = groupedAnswers.get(key);
+                            if (existing) {
+                                existing.count += 1;
+                            } else {
+                                groupedAnswers.set(key, { text, count: 1 });
+                            }
                         });
                     }
+                    groupedAnswers.forEach(answer => {
+                        const item = document.createElement("li");
+                        const text = document.createElement("span");
+                        text.textContent = answer.text;
+                        item.appendChild(text);
+                        if (answer.count > 1) {
+                            const count = document.createElement("strong");
+                            count.classList.add("presenter-answer-count");
+                            count.textContent = `×${answer.count}`;
+                            count.setAttribute("aria-label", `${answer.count} identical answers`);
+                            item.appendChild(count);
+                        }
+                        answersList.appendChild(item);
+                    });
                     infoContent.appendChild(answersList);
                 } else {
                     // Default or unknown phase

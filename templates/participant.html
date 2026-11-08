@@ -15,13 +15,19 @@
         <header class="game-header">
             <h1 class="game-title">CyberQuest Participant</h1>
             <div class="session-status">
-                Session: <strong id="current_session">not connected</strong>
+                Session: <strong class="session-id" id="current_session">not connected</strong>
+                Device: <strong class="session-id" id="current_device">not assigned</strong>
                 <button class="futuristic-btn" id="change_session_btn" type="button">Change</button>
             </div>
         </header>
         <section class="panel session-gate" id="session_gate">
             <h2>Join a session</h2>
             <p>Enter the shared session name before opening this screen.</p>
+            <p id="known_device" hidden>
+                Bekanntes Gerät für Sitzung
+                <strong class="session-id" id="known_device_session"></strong>:
+                <strong class="session-id" id="known_device_id"></strong>
+            </p>
             <form id="session_form">
                 <input class="input-field"
                        id="session_name_input"
@@ -51,6 +57,21 @@
             var app_state = {};
             var participantPhase = "welcome";
             var submittedQ = "";
+            var participantDeviceCode = "";
+
+            function showKnownDevice() {
+                try {
+                    const knownDevice = JSON.parse(
+                        localStorage.getItem("cyberquestLastParticipantDevice") || "null"
+                    );
+                    if (!knownDevice || !knownDevice.session || !knownDevice.id) return;
+                    document.getElementById("known_device_session").textContent = knownDevice.session;
+                    document.getElementById("known_device_id").textContent = knownDevice.id;
+                    document.getElementById("known_device").hidden = false;
+                } catch (_error) {
+                    localStorage.removeItem("cyberquestLastParticipantDevice");
+                }
+            }
 
             function renderView() {
                 const infoHeading = document.getElementById("info_heading");
@@ -70,6 +91,14 @@
                 // Clear contents
                 infoContent.innerHTML = "";
                 interactionContent.innerHTML = "";
+
+                if (app_state.sessionStatus === "finished") {
+                    infoHeading.textContent = "Game over";
+                    infoContent.textContent = "The teacher has ended this game session.";
+                    interactionHeading.textContent = "Session ended";
+                    interactionContent.textContent = "Thank you for participating.";
+                    return;
+                }
 
                 // Determine view based on gamePhase and participantPhase
                 if (app_state.gamePhase === "collecting") {
@@ -173,6 +202,28 @@
                     questionText.classList.add("question-text");
                     infoContent.appendChild(questionText);
 
+                    const answersHeading = document.createElement("h3");
+                    answersHeading.textContent = "Eure bisherigen Antworten";
+                    infoContent.appendChild(answersHeading);
+
+                    const answersList = document.createElement("ul");
+                    answersList.classList.add("answers-list");
+                    const answers = (app_state.currentAnswerDetails || []).filter(
+                        answer => answer.deviceCode === participantDeviceCode
+                    );
+                    if (answers.length === 0) {
+                        const emptyItem = document.createElement("li");
+                        emptyItem.textContent = "Noch keine Antworten.";
+                        answersList.appendChild(emptyItem);
+                    } else {
+                        answers.forEach(answer => {
+                            const item = document.createElement("li");
+                            item.textContent = String(answer.answer);
+                            answersList.appendChild(item);
+                        });
+                    }
+                    infoContent.appendChild(answersList);
+
                     interactionHeading.textContent = "Eure Antwort?";
                     let answerInput = document.createElement('input');
                     answerInput.type = "text";
@@ -196,6 +247,13 @@
                         // stay at give_answer
                     });
                     interactionContent.appendChild(answerBtn);
+                    interactionContent.appendChild(document.createElement("br"));
+
+                    const answerHint = document.createElement("small");
+                    answerHint.classList.add("action-hint");
+                    answerHint.textContent = "Eure Antwort wird an die Lehrperson gesendet und erscheint oben/links unter „Eure bisherigen Antworten“.";
+                    interactionContent.appendChild(answerHint);
+
                     document.getElementById('answer_input').focus();
                 } else {
                     // Unknown or loading phase
@@ -206,20 +264,31 @@
                 }
             }
 
-            function startSession() {
+            async function startSession() {
                 participantPhase = localStorage.getItem(sessionStorageKey("participantPhase")) || "welcome";
                 submittedQ = localStorage.getItem(sessionStorageKey("submittedQuestion")) || "";
 
-                let deviceId = localStorage.getItem("cyberquestDeviceId");
-                if (!deviceId) {
-                    deviceId = crypto.randomUUID();
-                    localStorage.setItem("cyberquestDeviceId", deviceId);
+                const response = await fetch(sessionUrl("/participant/join"), {
+                    method: "POST"
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    alert(data.error || "Unable to join this session.");
+                    localStorage.removeItem("cyberquestSession");
+                    window.location.reload();
+                    return;
                 }
+
+                document.getElementById("current_device").textContent = data.deviceId;
+                participantDeviceCode = data.deviceCode;
+                localStorage.setItem("cyberquestLastParticipantDevice", JSON.stringify({
+                    session: sessionName,
+                    id: data.deviceId
+                }));
                 socket = io({
                     auth: {
                         session: sessionName,
-                        role: "participant",
-                        deviceId: deviceId
+                        role: "participant"
                     }
                 });
                 socket.on("connect_error", function() {
@@ -234,7 +303,10 @@
                 });
             }
 
-            window.onload = () => initializeSession(startSession);
+            window.onload = () => {
+                showKnownDevice();
+                initializeSession(startSession);
+            };
         </script>
     </body>
 </html>
