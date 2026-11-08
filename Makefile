@@ -9,27 +9,27 @@ all: build up
 
 # Start a local development server with live code reloading
 dev:
-	docker-compose -f $(DEVELOPMENT_DOCKER_COMPOSE_FILE) up --build
+	docker compose -f $(DEVELOPMENT_DOCKER_COMPOSE_FILE) up --build
 
 # Build the Docker containers
 build:
-	docker-compose -f $(DOCKER_COMPOSE_FILE) build
+	docker compose -f $(DOCKER_COMPOSE_FILE) build
 
 # Start the Docker Compose services
 up:
-	docker-compose -f $(DOCKER_COMPOSE_FILE) up -d
+	docker compose -f $(DOCKER_COMPOSE_FILE) up -d
 
 # Stop the Docker Compose services
 down:
-	docker-compose -f $(DOCKER_COMPOSE_FILE) down
+	docker compose -f $(DOCKER_COMPOSE_FILE) down
 
 # Stop and remove all containers, networks, and volumes
 clean:
-	docker-compose -f $(DOCKER_COMPOSE_FILE) down -v --rmi all
+	docker compose -f $(DOCKER_COMPOSE_FILE) down -v --rmi all
 
 # View logs from the running containers
 logs:
-	docker-compose -f $(DOCKER_COMPOSE_FILE) logs -f
+	docker compose -f $(DOCKER_COMPOSE_FILE) logs -f
 
 # Restart the services (useful after code changes)
 restart: down up
