@@ -4,6 +4,15 @@ services:
     build:
       context: .
     container_name: sharedki_flask_container
+    command:
+      - gunicorn
+      - --bind=0.0.0.0:5000
+      - --workers=1
+      - --threads=100
+      - --timeout=120
+      - --access-logfile=-
+      - --error-logfile=-
+      - app:app
     networks:
       - revproxy
     environment:

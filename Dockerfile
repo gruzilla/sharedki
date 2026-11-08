@@ -24,5 +24,5 @@ EXPOSE 5000
 # Set environment variable for Flask
 ENV FLASK_APP=app.py
 
-# Run the application
-CMD ["flask", "run", "--host=0.0.0.0"]
+# Run the production server with a single threaded Socket.IO-compatible worker
+CMD ["gunicorn", "--bind=0.0.0.0:5000", "--workers=1", "--threads=100", "--timeout=120", "--access-logfile=-", "--error-logfile=-", "app:app"]
