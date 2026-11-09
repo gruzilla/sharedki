@@ -17,6 +17,7 @@ services:
       - revproxy
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}  # Load OPENAI_API_KEY from .env file
+      - API_KEY_ENCRYPTION_KEY=${API_KEY_ENCRYPTION_KEY}
       - FLASK_SECRET=${FLASK_SECRET}  # Load FLASK_SECRET from .env file
       - DATABASE_PATH=/data/cyberquest.db
       - SAVEGAMES_PATH=/app/savegames

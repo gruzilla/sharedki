@@ -120,6 +120,27 @@
                         <small class="action-hint">opens in a new window</small>
                     </form>
                 </div>
+                <div class="api-key-controls">
+                    <label for="openai_api_key_input">OpenAI API key</label>
+                    <p id="api_key_status" class="api-key-status" aria-live="polite"></p>
+                    <input class="input-field"
+                           id="openai_api_key_input"
+                           type="password"
+                           autocomplete="new-password"
+                           autocapitalize="none"
+                           spellcheck="false"
+                           placeholder="Enter a personal OpenAI API key">
+                    <div class="state-choice-group">
+                        <button class="futuristic-btn" id="test_api_key_btn" type="button">Test</button>
+                        <button class="futuristic-btn" id="save_api_key_btn" type="button">Save</button>
+                        <button class="futuristic-btn" id="remove_api_key_btn" type="button">Remove</button>
+                    </div>
+                    <small class="api-key-hint">
+                        The key is encrypted for this game session and is never displayed again.
+                        Testing and saving each make a small billable OpenAI request.
+                    </small>
+                    <p id="api_key_feedback" class="api-key-feedback" aria-live="polite"></p>
+                </div>
             </section>
             <section class="panel data-panel">
                 <h2>Full state</h2>
@@ -138,6 +159,57 @@
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.error || "Request failed");
                 return data;
+            }
+            function renderApiKeyStatus(status) {
+                const descriptions = {
+                    personal: "Using this game session’s personal OpenAI API key.",
+                    server: "Using the server’s OpenAI API key.",
+                    none: "No OpenAI API key is available."
+                };
+                el("api_key_status").textContent = status.error || descriptions[status.source];
+                el("api_key_status").classList.toggle("error", !status.usable);
+                el("remove_api_key_btn").disabled = !status.personalKeyConfigured;
+                el("save_api_key_btn").disabled = !status.encryptionAvailable;
+                el("test_api_key_btn").disabled = !status.encryptionAvailable;
+                el("openai_api_key_input").disabled = !status.encryptionAvailable;
+                if (!status.encryptionAvailable) {
+                    el("api_key_feedback").textContent = status.storageError;
+                } else if (el("api_key_feedback").textContent.includes("API_KEY_ENCRYPTION_KEY")) {
+                    el("api_key_feedback").textContent = "";
+                }
+            }
+            async function loadApiKeyStatus() {
+                renderApiKeyStatus(await request("/admin/api_key_status"));
+            }
+            function enteredApiKey() {
+                const apiKey = el("openai_api_key_input").value.trim();
+                if (!apiKey) throw new Error("Enter an OpenAI API key first.");
+                return apiKey;
+            }
+            function setApiKeyControlsBusy(busy) {
+                el("test_api_key_btn").disabled = busy;
+                el("save_api_key_btn").disabled = busy;
+                el("remove_api_key_btn").disabled = busy;
+            }
+            async function submitApiKey(path, successMessage) {
+                setApiKeyControlsBusy(true);
+                el("api_key_feedback").textContent = "Checking the API key…";
+                try {
+                    const result = await request(path, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ apiKey: enteredApiKey() })
+                    });
+                    el("openai_api_key_input").value = "";
+                    el("api_key_feedback").textContent = successMessage;
+                    if (result.status) renderApiKeyStatus(result.status);
+                    else await loadApiKeyStatus();
+                } catch (error) {
+                    el("api_key_feedback").textContent = error.message;
+                } finally {
+                    setApiKeyControlsBusy(false);
+                    await loadApiKeyStatus();
+                }
             }
             async function authenticate(path) {
                 teacherSessionName = normalizeSessionName(el("session_name_input").value);
@@ -325,6 +397,7 @@
                     el("game_screen").hidden = false;
                     el("current_session").textContent = teacherSessionName;
                     render(state);
+                    await loadApiKeyStatus();
                     socket = io({
                         auth: {
                             session: teacherSessionName,
@@ -372,6 +445,24 @@
             el("get_ai_answer_btn").onclick = () => request("/admin/get_ai_answer", {
                 method: "POST"
             }).catch(e => alert(e.message));
+            el("test_api_key_btn").onclick = () =>
+                submitApiKey("/admin/api_key/test", "The API key works and was not stored.");
+            el("save_api_key_btn").onclick = () =>
+                submitApiKey("/admin/api_key", "The personal API key was encrypted and saved.");
+            el("remove_api_key_btn").onclick = async () => {
+                if (!confirm("Remove the personal OpenAI API key from this game session?")) return;
+                setApiKeyControlsBusy(true);
+                try {
+                    const result = await request("/admin/api_key", { method: "DELETE" });
+                    renderApiKeyStatus(result.status);
+                    el("api_key_feedback").textContent = "The personal API key was removed.";
+                } catch (error) {
+                    el("api_key_feedback").textContent = error.message;
+                } finally {
+                    setApiKeyControlsBusy(false);
+                    await loadApiKeyStatus();
+                }
+            };
             el("start_btn").onclick = () => confirm("Start a new live run? Previous run data will be cleared.") && request("/admin/start", {
                 method: "POST"
             }).catch(e => alert(e.message));

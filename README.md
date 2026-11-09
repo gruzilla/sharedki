@@ -14,7 +14,7 @@ Install:
 
 - Docker
 - Docker Compose
-- An OpenAI API key
+- An OpenAI API key for the server, or one supplied by the teacher in the admin screen
 
 No local Python installation is required to run the application in Docker.
 
@@ -22,12 +22,29 @@ No local Python installation is required to run the application in Docker.
 
 Create a `.env` file in the project root:
 
+Generate a stable encryption key for teacher-provided OpenAI API keys:
+
+```sh
+docker run --rm python:3.9-slim python -c 'import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'
+```
+
+Then add the generated value to the environment file:
+
 ```dotenv
 OPENAI_API_KEY=your-openai-api-key
+API_KEY_ENCRYPTION_KEY=the-generated-fernet-key
 FLASK_SECRET=replace-this-with-a-long-random-secret
 ```
 
+`OPENAI_API_KEY` is the fallback used when a game session has no personal teacher key.
+It may be left empty if every teacher supplies a key. Keep `API_KEY_ENCRYPTION_KEY`
+stable and backed up: changing or losing it makes already stored personal keys unreadable.
 Use a unique, unpredictable value for `FLASK_SECRET`. Do not commit the `.env` file.
+
+Teachers can test, save, replace, or remove a personal OpenAI API key from the
+admin controls. Personal keys are validated with a small billable generation request,
+encrypted before being stored in SQLite, and scoped to one game session. They are
+never included in game state, reports, browser storage, or Socket.IO messages.
 
 Ensure the report snapshot directory exists:
 

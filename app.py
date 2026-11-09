@@ -1,5 +1,6 @@
 from collections import Counter
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import sqlite3
 from threading import Lock
 
 from dotenv import load_dotenv
+from cryptography.fernet import Fernet, InvalidToken
 from flask import Flask, jsonify, render_template, request, session
 from flask_socketio import SocketIO, emit, join_room
 from openai import OpenAI
@@ -17,7 +19,9 @@ load_dotenv()
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET")
 socketio = SocketIO(app)
-openAIClient = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+SERVER_OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+API_KEY_ENCRYPTION_KEY = os.environ.get("API_KEY_ENCRYPTION_KEY", "").strip()
+serverOpenAIClient = OpenAI(api_key=SERVER_OPENAI_API_KEY) if SERVER_OPENAI_API_KEY else None
 DATABASE_PATH = os.environ.get("DATABASE_PATH", os.path.join(app.root_path, "data", "cyberquest.db"))
 SAVEGAMES_PATH = os.environ.get("SAVEGAMES_PATH", os.path.join(app.root_path, "savegames"))
 VALID_AI_MODES = {"conversation", "independend"}
@@ -88,6 +92,10 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, session_name TEXT NOT NULL,
             question_index INTEGER NOT NULL, answer_text TEXT NOT NULL, source TEXT NOT NULL,
             participant_id TEXT, created_at TEXT NOT NULL,
+            FOREIGN KEY(session_name) REFERENCES game_sessions(session_name) ON DELETE CASCADE);
+        CREATE TABLE IF NOT EXISTS game_session_api_keys (
+            session_name TEXT PRIMARY KEY, encrypted_api_key TEXT NOT NULL,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
             FOREIGN KEY(session_name) REFERENCES game_sessions(session_name) ON DELETE CASCADE);
         """)
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(participants)")}
@@ -174,27 +182,100 @@ ai_cache = {}
 conversations = {}
 request_locks = {}
 
-def conversation_id(name, state):
-    signature = (state["gptModel"], state["systemPrompt"])
+class ApiKeyConfigurationError(Exception):
+    pass
+
+def api_key_cipher():
+    if not API_KEY_ENCRYPTION_KEY:
+        raise ApiKeyConfigurationError(
+            "Personal API key storage is unavailable because API_KEY_ENCRYPTION_KEY is not configured"
+        )
+    try:
+        return Fernet(API_KEY_ENCRYPTION_KEY.encode("ascii"))
+    except (ValueError, UnicodeEncodeError) as exception:
+        raise ApiKeyConfigurationError("API_KEY_ENCRYPTION_KEY is invalid") from exception
+
+def stored_api_key_row(name):
+    with db() as connection:
+        return connection.execute(
+            "SELECT encrypted_api_key FROM game_session_api_keys WHERE session_name=?",
+            (name,)
+        ).fetchone()
+
+def decrypt_api_key(row):
+    try:
+        return api_key_cipher().decrypt(row["encrypted_api_key"].encode("ascii")).decode("utf-8")
+    except (InvalidToken, UnicodeDecodeError, UnicodeEncodeError) as exception:
+        raise ApiKeyConfigurationError(
+            "The stored personal API key cannot be decrypted with the configured encryption key"
+        ) from exception
+
+def credential_for(name):
+    row = stored_api_key_row(name)
+    if row is not None:
+        api_key = decrypt_api_key(row)
+        return OpenAI(api_key=api_key), "personal", hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    if serverOpenAIClient is not None:
+        return serverOpenAIClient, "server", hashlib.sha256(SERVER_OPENAI_API_KEY.encode("utf-8")).hexdigest()
+    raise ApiKeyConfigurationError("No OpenAI API key is configured")
+
+def api_key_status_for(name):
+    row = stored_api_key_row(name)
+    configured = row is not None
+    storage_error = None
+    try:
+        api_key_cipher()
+        encryption_available = True
+    except ApiKeyConfigurationError as exception:
+        encryption_available = False
+        storage_error = str(exception)
+    status = {
+        "personalKeyConfigured": configured,
+        "encryptionAvailable": encryption_available,
+        "serverKeyConfigured": bool(SERVER_OPENAI_API_KEY),
+        "source": "personal" if configured else ("server" if SERVER_OPENAI_API_KEY else "none"),
+        "usable": bool(configured or SERVER_OPENAI_API_KEY),
+    }
+    if storage_error:
+        status["storageError"] = storage_error
+    if configured:
+        try:
+            decrypt_api_key(row)
+        except ApiKeyConfigurationError as exception:
+            status["usable"] = False
+            status["error"] = str(exception)
+    return status
+
+def test_openai_key(api_key, state):
+    client = OpenAI(api_key=api_key)
+    client.responses.create(
+        model=state["gptModel"],
+        input="Reply with OK.",
+        max_output_tokens=16,
+    )
+
+def conversation_id(name, state, client, credential_id):
+    signature = (state["gptModel"], state["systemPrompt"], credential_id)
     existing = conversations.get(name)
     if existing and existing["signature"] == signature:
         return existing["id"]
-    conversation = openAIClient.conversations.create(
+    conversation = client.conversations.create(
         metadata={"game_session": name[:512]},
         items=[{"type": "message", "role": "system", "content": state["systemPrompt"]}])
     conversations[name] = {"id": conversation.id, "signature": signature}
     return conversation.id
 
 def ai_answer(name, state, question):
+    client, _, credential_id = credential_for(name)
     if state["aiMode"] == "conversation":
-        response = openAIClient.responses.create(
-            model=state["gptModel"], conversation=conversation_id(name, state),
+        response = client.responses.create(
+            model=state["gptModel"], conversation=conversation_id(name, state, client, credential_id),
             input=[{"role": "user", "content": question}], max_output_tokens=150)
         return response.output_text.strip(), response.usage.total_tokens
-    key = (state["gptModel"], state["systemPrompt"], question)
+    key = (credential_id, state["gptModel"], state["systemPrompt"], question)
     if key in ai_cache:
         return ai_cache[key], 0
-    response = openAIClient.chat.completions.create(
+    response = client.chat.completions.create(
         model=state["gptModel"],
         messages=[{"role": "system", "content": state["systemPrompt"]},
                   {"role": "user", "content": question}],
@@ -304,6 +385,68 @@ def logout():
 def get_state():
     _, record, error = requested_session(True)
     return error if error else jsonify(state_for(record))
+
+@app.get("/admin/api_key_status")
+def api_key_status():
+    name, _, error = requested_session(True)
+    return error if error else jsonify(api_key_status_for(name))
+
+@app.post("/admin/api_key/test")
+def test_api_key():
+    _, record, error = requested_session(True)
+    if error:
+        return error
+    api_key = str((request.get_json() or {}).get("apiKey", "")).strip()
+    if not api_key:
+        return jsonify(success=False, error="Enter an OpenAI API key"), 400
+    if len(api_key) > 4096:
+        return jsonify(success=False, error="The OpenAI API key is too long"), 400
+    try:
+        test_openai_key(api_key, state_for(record))
+    except Exception as exception:
+        return jsonify(success=False, error=f"OpenAI rejected the API key: {exception}"), 400
+    return jsonify(success=True)
+
+@app.post("/admin/api_key")
+def save_api_key():
+    name, record, error = requested_session(True)
+    if error:
+        return error
+    api_key = str((request.get_json() or {}).get("apiKey", "")).strip()
+    if not api_key:
+        return jsonify(success=False, error="Enter an OpenAI API key"), 400
+    if len(api_key) > 4096:
+        return jsonify(success=False, error="The OpenAI API key is too long"), 400
+    try:
+        cipher = api_key_cipher()
+        test_openai_key(api_key, state_for(record))
+        encrypted = cipher.encrypt(api_key.encode("utf-8")).decode("ascii")
+    except ApiKeyConfigurationError as exception:
+        return jsonify(success=False, error=str(exception)), 503
+    except Exception as exception:
+        return jsonify(success=False, error=f"OpenAI rejected the API key: {exception}"), 400
+    timestamp = now()
+    with db() as connection:
+        connection.execute(
+            """INSERT INTO game_session_api_keys(session_name,encrypted_api_key,created_at,updated_at)
+               VALUES(?,?,?,?)
+               ON CONFLICT(session_name) DO UPDATE SET
+                   encrypted_api_key=excluded.encrypted_api_key,
+                   updated_at=excluded.updated_at""",
+            (name, encrypted, timestamp, timestamp)
+        )
+    conversations.pop(name, None)
+    return jsonify(success=True, status=api_key_status_for(name))
+
+@app.delete("/admin/api_key")
+def remove_api_key():
+    name, _, error = requested_session(True)
+    if error:
+        return error
+    with db() as connection:
+        connection.execute("DELETE FROM game_session_api_keys WHERE session_name=?", (name,))
+    conversations.pop(name, None)
+    return jsonify(success=True, status=api_key_status_for(name))
 
 @app.post("/admin/update_state")
 def update_state():

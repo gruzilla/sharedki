@@ -7,6 +7,7 @@ services:
       - "127.0.0.1:5000:5000"
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      API_KEY_ENCRYPTION_KEY: ${API_KEY_ENCRYPTION_KEY}
       FLASK_SECRET: ${FLASK_SECRET}
       DATABASE_PATH: /data/cyberquest.db
       SAVEGAMES_PATH: /app/savegames

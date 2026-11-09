@@ -361,6 +361,29 @@ body::before {
     text-align: center;
 }
 
+.api-key-controls {
+    margin-top: 1rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid #00eaff33;
+}
+
+.api-key-controls .input-field {
+    margin-bottom: 0.75rem;
+}
+
+.api-key-status,
+.api-key-feedback {
+    min-height: 1.4em;
+    margin: 0 0 0.75rem;
+}
+
+.api-key-hint {
+    display: block;
+    margin-top: 0.75rem;
+    color: #9aa3ba;
+    line-height: 1.4;
+}
+
 .state-choice-group {
     display: flex;
     flex-wrap: wrap;
