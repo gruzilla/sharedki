@@ -8,6 +8,7 @@
                 integrity="sha384-KA7m0DwgQGmeRC6Xre3hJO+ZxpanOauVh4Czdqbg8lDKJ3bZZYVYmP+y4F31x40L"
                 crossorigin="anonymous"></script>
         <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+        <script src="{{ url_for('static', filename='i18n.js') }}"></script>
         <script src="{{ url_for('static', filename='session.js') }}"></script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
     </head>
@@ -24,7 +25,7 @@
             <h2>Join a session</h2>
             <p>Enter the shared session name before opening this screen.</p>
             <p id="known_device" hidden>
-                Bekanntes Gerät für Sitzung
+                Known device for session
                 <strong class="session-id" id="known_device_session"></strong>:
                 <strong class="session-id" id="known_device_id"></strong>
             </p>
@@ -106,13 +107,13 @@
                         // Show welcome
                         infoHeading.textContent = "Welcome";
                         let p = document.createElement('p');
-                        p.textContent = "Willkommen! Bereit loszulegen?";
+                        p.textContent = "Welcome! Ready to get started?";
                         infoContent.appendChild(p);
 
                         interactionHeading.textContent = "Start";
                         let continueBtn = document.createElement('button');
                         continueBtn.classList.add("futuristic-btn");
-                        continueBtn.textContent = "Los gehts!";
+                        continueBtn.textContent = "Let's go!";
                         continueBtn.addEventListener("click", () => {
                             participantPhase = "insert";
                             localStorage.setItem(sessionStorageKey("participantPhase"), participantPhase);
@@ -124,16 +125,16 @@
                         // participantPhase is either 'insert', 'update', or something similar
                         if (!submittedQ) {
                             // Insert question view
-                            infoHeading.textContent = "Gebt eure Frage ein:";
+                            infoHeading.textContent = "Enter your question:";
                             let p = document.createElement('p');
-                            p.textContent = "Bitte schlagt eine Frage vor. Die Frage wird von den Gruppen und einer KI beantwortet. Versucht die Frage so zu formulieren, dass ihr anhand der Antwort unterscheiden könnt, ob eine KI die Frage beantwortet hat.";
+                            p.textContent = "Please suggest a question. The groups and an AI will answer it. Try to phrase it so that the answer helps you distinguish the AI from the other groups.";
                             infoContent.appendChild(p);
 
-                            interactionHeading.textContent = "Your Question";
+                            interactionHeading.textContent = "Your question";
                             let inputField = document.createElement('input');
                             inputField.type = "text";
                             inputField.classList.add("input-field");
-                            inputField.placeholder = "Eure Frage hier...";
+                            inputField.placeholder = "Your question here...";
                             inputField.id = "question_input";
                             if (existingQuestionInput) {
                                 inputField.value = existingQuestionInput.value;
@@ -142,7 +143,7 @@
 
                             let submitBtn = document.createElement('button');
                             submitBtn.classList.add("futuristic-btn");
-                            submitBtn.textContent = "Submit Question";
+                            submitBtn.textContent = "Submit question";
                             submitBtn.addEventListener("click", () => {
                                 const q = inputField.value;
                                 socket.emit('participant_action', {
@@ -159,12 +160,12 @@
 
                         } else {
                             // Update question view
-                            infoHeading.textContent = "Ändert eure Frage";
+                            infoHeading.textContent = "Edit your question";
                             let p = document.createElement('p');
-                            p.textContent = "Wenn ihr wollt, könnt ihr eure Frage nochmal ändern. Überprüft etwa auf Tippfehler!";
+                            p.textContent = "You can revise your question and check it for typing mistakes.";
                             infoContent.appendChild(p);
 
-                            interactionHeading.textContent = "Eure Frage";
+                            interactionHeading.textContent = "Your question";
                             let updateInput = document.createElement('input');
                             updateInput.type = "text";
                             updateInput.classList.add("input-field");
@@ -195,7 +196,7 @@
 
                 } else if (app_state.gamePhase === "answering") {
                     // give_answer view
-                    infoHeading.textContent = "Hier die Frage:";
+                    infoHeading.textContent = "Here is the question:";
                     let currentQ = app_state.questions[app_state.currentQuestion] || "";
                     let questionText = document.createElement('p');
                     questionText.textContent = currentQ;
@@ -203,7 +204,7 @@
                     infoContent.appendChild(questionText);
 
                     const answersHeading = document.createElement("h3");
-                    answersHeading.textContent = "Eure bisherigen Antworten";
+                    answersHeading.textContent = "Your previous answers";
                     infoContent.appendChild(answersHeading);
 
                     const answersList = document.createElement("ul");
@@ -224,11 +225,11 @@
                     }
                     infoContent.appendChild(answersList);
 
-                    interactionHeading.textContent = "Eure Antwort?";
+                    interactionHeading.textContent = "Your answer?";
                     let answerInput = document.createElement('input');
                     answerInput.type = "text";
                     answerInput.classList.add("input-field");
-                    answerInput.placeholder = "Eure Antwort...";
+                    answerInput.placeholder = "Your answer...";
                     answerInput.id = "answer_input";
                     if (existingAnswerInput) {
                         answerInput.value = existingAnswerInput.value;
@@ -237,7 +238,7 @@
 
                     let answerBtn = document.createElement('button');
                     answerBtn.classList.add("futuristic-btn");
-                    answerBtn.textContent = "Antwort abschicken";
+                    answerBtn.textContent = "Submit answer";
                     answerBtn.addEventListener("click", () => {
                         const a = answerInput.value;
                         socket.emit('participant_action', {
@@ -251,7 +252,7 @@
 
                     const answerHint = document.createElement("small");
                     answerHint.classList.add("action-hint");
-                    answerHint.textContent = "Eure Antwort wird an die Lehrperson gesendet und erscheint oben/links unter „Eure bisherigen Antworten“.";
+                    answerHint.textContent = "Your answer is sent to the teacher and appears above/left under “Your previous answers”.";
                     interactionContent.appendChild(answerHint);
 
                     document.getElementById('answer_input').focus();

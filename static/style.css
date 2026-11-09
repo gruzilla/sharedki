@@ -496,6 +496,23 @@ button:disabled {
     font-size: 0.75rem;
 }
 
+.language-switcher {
+    margin-left: 0.75rem;
+    padding: 0.35rem 0.55rem;
+    border: 1px solid #00eaff88;
+    border-radius: 4px;
+    background: #13172a;
+    color: #d1d1d1;
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.language-switcher:focus {
+    outline: 2px solid #00eaff;
+    outline-offset: 2px;
+}
+
 .session-gate {
     width: min(500px, calc(100% - 2rem));
     margin: auto;

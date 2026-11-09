@@ -9,6 +9,7 @@
                 crossorigin="anonymous"></script>
         <!-- Include your CSS file -->
         <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+        <script src="{{ url_for('static', filename='i18n.js') }}"></script>
         <script src="{{ url_for('static', filename='session.js') }}"></script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
     </head>
@@ -44,7 +45,7 @@
             <!-- Interaction Panel: Could be used for future features, admin controls, or presenter-only tools -->
             <section class="panel interaction-panel" id="interaction_panel">
                 <!-- Currently can remain empty or show a placeholder -->
-                <h2 id="interaction_heading">Aufgabe</h2>
+                <h2 id="interaction_heading">Task</h2>
                 <p id="interaction_content">No actions available yet.</p>
             </section>
         </main>
@@ -73,8 +74,8 @@
 
                 if (app_state.gamePhase === "collecting") {
                     // Show welcome and collected questions
-                    infoHeading.textContent = "Gesammelte Fragen";
-                    interactionContent.textContent = "Gebt nun eine Frage ein, die es euch leicht machen die KI zu von den anderen Gruppen zu unterscheiden!";
+                    infoHeading.textContent = "Collected questions";
+                    interactionContent.textContent = "Enter a question that makes it easy to distinguish the AI from the other groups!";
                     let p = document.createElement('p');
                     p.textContent = "";
                     infoContent.appendChild(p);
@@ -91,8 +92,8 @@
 
                 } else if (app_state.gamePhase === "answering") {
                     // Show current question and answers
-                    infoHeading.textContent = "Aktuelle Frage";
-                    interactionContent.textContent = "Gebt nun eure Antwort auf diese Frage ein!";
+                    infoHeading.textContent = "Current question";
+                    interactionContent.textContent = "Now enter your answer to this question!";
 
                     let currentQ = app_state.questions[app_state.currentQuestion] || "";
                     let questionDiv = document.createElement('div');
@@ -101,7 +102,7 @@
                     infoContent.appendChild(questionDiv);
 
                     let answersHeading = document.createElement('h3');
-                    answersHeading.textContent = "Antworten:";
+                    answersHeading.textContent = "Answers";
                     infoContent.appendChild(answersHeading);
 
                     let answersList = document.createElement('ul');

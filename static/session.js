@@ -23,7 +23,7 @@ function initializeSession(startSession) {
     function joinSession(rawName) {
         const normalizedName = normalizeSessionName(rawName);
         if (!normalizedName) {
-            input.setCustomValidity("Please enter a session name.");
+            input.setCustomValidity(t("Please enter a session name."));
             input.reportValidity();
             return;
         }
